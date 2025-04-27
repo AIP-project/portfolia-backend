@@ -1,0 +1,99 @@
+name: GCP Deployment
+
+on:
+  workflow_dispatch:  # 수동 실행 트리거 추가
+    inputs:
+      environment:
+        description: '배포 환경 선택'
+        required: true
+        type: choice
+        options:
+          - staging
+          - prod
+        default: 'staging'
+  push:
+    branches:
+      - 'release/*'  # Staging deployment trigger
+      - 'main'       # Production deployment trigger
+
+jobs:
+  determine-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+    steps:
+      - id: set-env
+        run: |
+          if [[ ${{ github.ref }} == refs/heads/main ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    needs: determine-environment
+    runs-on: ubuntu-latest
+    environment: ${{ needs.determine-environment.outputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.5.0'
+
+      - name: Setup GCP Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCP
+        run: |
+          gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev
+
+      - name: Deploy Docker Image
+        run: |
+          yarn docker:deploy ${{ needs.determine-environment.outputs.environment }}
+
+      - name: Deploy Service
+        run: |
+          yarn service:deploy ${{ needs.determine-environment.outputs.environment }}
+
+#      - name: Send deployment status email
+#        if: always()
+#        uses: dawidd6/action-send-mail@v3
+#        with:
+#          server_address: smtp.gmail.com
+#          server_port: 465
+#          username: ${{ secrets.EMAIL_USERNAME }}
+#          password: ${{ secrets.EMAIL_PASSWORD }}
+#          subject: 📊 Deployment Status for ${{ needs.determine-environment.outputs.environment }}
+#          body: |
+#            Deployment Status Report
+#
+#            Environment: ${{ needs.determine-environment.outputs.environment }}
+#            Branch: ${{ github.ref_name }}
+#            Commit: ${{ github.sha }}
+#            Status: ${{ job.status }}
+#
+#            Triggered by: ${{ github.actor }}
+#            Repository: ${{ github.repository }}
+#
+#            For more details, please visit:
+#            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+#          to: ${{ secrets.NOTIFICATION_EMAIL }}
+#          from: GitHub Actions

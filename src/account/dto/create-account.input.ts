@@ -1,0 +1,33 @@
+import { Field, InputType, OmitType } from "@nestjs/graphql"
+import { AccountInput } from "./account.input"
+import { IsEnum, IsOptional, ValidateNested } from "class-validator"
+import { AccountType, CurrencyType } from "../../common"
+import { CreateBankSummaryInput } from "../../bank-summary/dto"
+import { CreateStockSummaryInput } from "../../stock-summary/dto"
+import { CreateCoinSummaryInput } from "../../coin-summary/dto"
+
+@InputType()
+export class CreateAccountInput extends OmitType(AccountInput, ["id"]) {
+  @Field(() => AccountType, { nullable: false, description: "계좌 타입" })
+  @IsEnum(AccountType)
+  type!: AccountType
+
+  @Field(() => CurrencyType, { nullable: false, description: "계좌 통화" })
+  @IsEnum(CurrencyType)
+  currency!: CurrencyType
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  bankSummary?: CreateBankSummaryInput
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  stockSummary?: CreateStockSummaryInput
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  coinSummary?: CreateCoinSummaryInput
+}

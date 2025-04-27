@@ -1,0 +1,64 @@
+services:
+  aip_backend:
+    container_name: aip_backend
+    build:
+      dockerfile: deploy/Dockerfile
+      args:
+        NODE_ENV: "compose"
+        APP_PORT: "3100"
+    ports:
+      - "3100:3100"
+    environment:
+      - DB_HOST=aip_project_db
+      - DB_PORT=3306
+      - DB_USERNAME=user
+      - DB_PASSWORD=password
+      - DB_DATABASE=mydb
+      - REDIS_HOST=aip_redis
+      - REDIS_PORT=6379
+    depends_on:
+      - aip_db
+      - aip_redis
+    networks:
+      - aip-network
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  aip_db:
+    container_name: aip_db
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=aipqlalfqjsgh123!
+      - MYSQL_DATABASE=aip_db
+      - MYSQL_USER=aip
+      - MYSQL_PASSWORD=aipqlalfqjsgh123!
+    volumes:
+      - aip_db_data:/var/lib/mysql
+    networks:
+      - aip-network
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_bin  # 대소문자 구분
+      - --lower_case_table_names=0      # 테이블명 대소문자 구분
+
+  aip_redis:
+    container_name: aip_redis
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - aip_redis_data:/data
+    networks:
+      - aip-network
+    command: redis-server --appendonly yes --requirepass ""
+
+networks:
+  aip-network:
+    driver: bridge
+
+volumes:
+  aip_db_data:
+  aip_redis_data:
