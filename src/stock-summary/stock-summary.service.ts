@@ -140,4 +140,10 @@ export class StockSummaryService {
     })
     return null
   }
+
+  async totalStocks(stockSummary: StockSummary) {
+    return this.stockSummaryRepository.find({
+      where: { accountId: stockSummary.accountId, type: SummaryType.SUMMARY, isDelete: false },
+    })
+  }
 }

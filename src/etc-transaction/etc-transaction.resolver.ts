@@ -1,12 +1,16 @@
-import { Args, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
+import { Args, Float, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { JwtPayload, parseISOString, UserDecoded } from "../common"
 import { CreateEtcTransactionInput, EtcTransactions, EtcTransactionsArgs, UpdateEtcTransactionInput } from "./dto"
 import { EtcTransactionService } from "./etc-transaction.service"
 import { EtcTransaction } from "./entities"
+import { ExchangeDataloader } from "../exchange/exchange.dataloader"
 
 @Resolver(() => EtcTransaction)
 export class EtcTransactionResolver {
-  constructor(private readonly etcTransactionService: EtcTransactionService) {}
+  constructor(
+    private readonly etcTransactionService: EtcTransactionService,
+    private readonly exchangeDataloader: ExchangeDataloader,
+  ) {}
 
   @Mutation(() => EtcTransaction)
   async createEtcTransaction(
@@ -37,5 +41,41 @@ export class EtcTransactionResolver {
   @ResolveField("transactionDate", () => Date, { nullable: true, description: "거래 일자" })
   async resolveTransactionDate(@Parent() etcTransaction: EtcTransaction) {
     return parseISOString(etcTransaction.transactionDate)
+  }
+
+  @ResolveField("currentAmountInDefaultCurrency", () => Float, {
+    nullable: true,
+    description: "계정 기본 통화로 환산한 현재 가치 총 금액",
+  })
+  async resolveCurrentAmountInDefaultCurrency(
+    @UserDecoded() jwtPayload: JwtPayload,
+    @Parent() etcTransaction: EtcTransaction,
+  ) {
+    if (!etcTransaction.currency) return null
+
+    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(etcTransaction.currency)
+
+    if (!exchangeRate) return null
+
+    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
+    const summaryCurrencyRate = exchangeRate.exchangeRates[etcTransaction.currency]
+
+    if (!defaultCurrencyRate || !summaryCurrencyRate) return null
+
+    const crossRate = defaultCurrencyRate / summaryCurrencyRate
+
+    if (!etcTransaction.currentPrice) return null
+
+    return etcTransaction.currentPrice * crossRate
+  }
+
+  @ResolveField("returnRate", () => Float, {
+    nullable: true,
+    description: "수익률",
+  })
+  async resolveReturnRate(@Parent() etcTransaction: EtcTransaction) {
+    if (!etcTransaction.currentPrice || !etcTransaction.purchasePrice) return null
+
+    return ((etcTransaction.currentPrice - etcTransaction.purchasePrice) / etcTransaction.purchasePrice) * 100
   }
 }

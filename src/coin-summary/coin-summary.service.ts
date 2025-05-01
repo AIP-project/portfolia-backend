@@ -138,4 +138,10 @@ export class CoinSummaryService {
     })
     return null
   }
+
+  async totalCoins(coinSummary: CoinSummary) {
+    return this.coinSummaryRepository.find({
+      where: { accountId: coinSummary.accountId, type: SummaryType.SUMMARY, isDelete: false },
+    })
+  }
 }

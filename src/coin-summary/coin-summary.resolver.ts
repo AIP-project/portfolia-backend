@@ -1,10 +1,11 @@
 import { Args, Float, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { CoinSummaryService } from "./coin-summary.service"
 import { CoinSummary } from "./entities"
-import { CurrencyType, JwtPayload, UserDecoded } from "../common"
+import { CurrencyType, JwtPayload, SummaryType, UserDecoded } from "../common"
 import { CoinSummaries, CoinSummariesArgs, UpdateCoinSummaryInput } from "./dto"
 import { CoinPriceDataloader } from "../coin-price-history/coin-price.dataloader"
 import { ExchangeDataloader } from "../exchange/exchange.dataloader"
+import { StockSummary } from "../stock-summary/entities"
 
 @Resolver(() => CoinSummary)
 export class CoinSummaryResolver {
@@ -37,6 +38,8 @@ export class CoinSummaryResolver {
     description: "계정 기본 통화로 환산한 총 금액",
   })
   async resolveAmountInDefaultCurrency(@UserDecoded() jwtPayload: JwtPayload, @Parent() coinSummary: CoinSummary) {
+    if (!coinSummary.currency) return null
+
     const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(coinSummary.currency)
 
     if (!exchangeRate) return null
@@ -58,6 +61,8 @@ export class CoinSummaryResolver {
 
   @ResolveField("currentAmount", () => Float, { nullable: true, description: "현재 가치 총 금액" })
   async resolveCurrentAmount(@Parent() coinSummary: CoinSummary) {
+    if (!coinSummary.currency || !coinSummary.symbol) return null
+
     const coinPriceHistory = await this.coinPriceDataloader.coinPriceBySymbols.load(coinSummary.symbol)
     if (!coinPriceHistory) return null
 
@@ -81,6 +86,8 @@ export class CoinSummaryResolver {
     @UserDecoded() jwtPayload: JwtPayload,
     @Parent() coinSummary: CoinSummary,
   ) {
+    if (!coinSummary.currency || !coinSummary.symbol) return null
+
     const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(coinSummary.currency)
 
     if (!exchangeRate) return null
@@ -109,6 +116,8 @@ export class CoinSummaryResolver {
     @UserDecoded() jwtPayload: JwtPayload,
     @Parent() coinSummary: CoinSummary,
   ) {
+    if (!coinSummary.currency || !coinSummary.symbol) return null
+
     const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(coinSummary.currency)
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[coinSummary.currency]
@@ -146,5 +155,20 @@ export class CoinSummaryResolver {
     const currentAmount = await this.resolveCurrentAmountInDefaultCurrency(jwtPayload, coinSummary)
     if (!amount || !currentAmount) return null
     return currentAmount - amount
+  }
+
+  @ResolveField("totalCoinValue", () => Float, { nullable: true, description: "보유 코인 총 가치" })
+  async resolveTotalCoinValue(@Parent() coinSummary: CoinSummary) {
+    if (coinSummary.type !== SummaryType.CASH) return 0
+    const totalStocks = await this.coinSummaryService.totalCoins(coinSummary)
+    const amounts = await Promise.all(totalStocks.map((stock) => this.resolveCurrentAmount(stock)))
+    return amounts.reduce((acc, currentAmount) => acc + currentAmount, 0)
+  }
+
+  @ResolveField("totalAccountValue", () => Float, { nullable: true, description: "계좌 총 가치" })
+  async resolveTotalAccountValue(@Parent() coinSummary: CoinSummary) {
+    if (coinSummary.type !== SummaryType.CASH) return 0
+    const totalCoinValue = await this.resolveTotalCoinValue(coinSummary)
+    return coinSummary.amount + (totalCoinValue || 0)
   }
 }
