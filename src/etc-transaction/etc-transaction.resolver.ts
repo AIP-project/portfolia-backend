@@ -51,20 +51,18 @@ export class EtcTransactionResolver {
     @UserDecoded() jwtPayload: JwtPayload,
     @Parent() etcTransaction: EtcTransaction,
   ) {
-    if (!etcTransaction.currency) return null
+    if (!etcTransaction.currency || !etcTransaction.currentPrice) return 0
 
     const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(etcTransaction.currency)
 
-    if (!exchangeRate) return null
+    if (!exchangeRate) return 0
 
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[etcTransaction.currency]
 
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return null
+    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
-
-    if (!etcTransaction.currentPrice) return null
 
     return etcTransaction.currentPrice * crossRate
   }
@@ -74,7 +72,7 @@ export class EtcTransactionResolver {
     description: "수익률",
   })
   async resolveReturnRate(@Parent() etcTransaction: EtcTransaction) {
-    if (!etcTransaction.currentPrice || !etcTransaction.purchasePrice) return null
+    if (!etcTransaction.currentPrice || !etcTransaction.purchasePrice) return 0
 
     return ((etcTransaction.currentPrice - etcTransaction.purchasePrice) / etcTransaction.purchasePrice) * 100
   }

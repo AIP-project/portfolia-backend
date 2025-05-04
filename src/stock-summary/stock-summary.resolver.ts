@@ -37,33 +37,34 @@ export class StockSummaryResolver {
     description: "계정 기본 통화로 환산한 총 금액",
   })
   async resolveAmountInDefaultCurrency(@UserDecoded() jwtPayload: JwtPayload, @Parent() stockSummary: StockSummary) {
-    if (!stockSummary.currency) return null
+    if (!stockSummary.currency) return 0
 
     const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(stockSummary.currency)
 
-    if (!exchangeRate) return null
+    if (!exchangeRate) return 0
 
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[stockSummary.currency]
 
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return null
+    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
 
     return stockSummary.amount * crossRate
   }
 
-  @ResolveField("pricePerUnit", () => Float, { nullable: true, description: "구매한 개당 가격" })
+  @ResolveField("pricePerShare", () => Float, { nullable: true, description: "구매한 개당 가격" })
   async resolvePricePerUnit(@Parent() stockSummary: StockSummary) {
+    if (stockSummary.type === SummaryType.CASH) return 0
     return stockSummary.amount / stockSummary.quantity
   }
 
   @ResolveField("currentAmount", () => Float, { nullable: true, description: "현재 가치 총 금액" })
   async resolveCurrentAmount(@Parent() stockSummary: StockSummary) {
-    if (!stockSummary.symbol) return null
+    if (!stockSummary.symbol) return 0
 
     const stockPriceHistory = await this.stockPriceDataloader.stockPriceBySymbols.load(stockSummary.symbol)
-    if (!stockPriceHistory) return null
+    if (!stockPriceHistory) return 0
     return stockSummary.quantity * stockPriceHistory.base
   }
 
@@ -75,27 +76,27 @@ export class StockSummaryResolver {
     @UserDecoded() jwtPayload: JwtPayload,
     @Parent() stockSummary: StockSummary,
   ) {
-    if (!stockSummary.currency || !stockSummary.symbol) return null
+    if (!stockSummary.currency || !stockSummary.symbol) return 0
 
     const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(stockSummary.currency)
 
-    if (!exchangeRate) return null
+    if (!exchangeRate) return 0
 
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[stockSummary.currency]
 
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return null
+    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
 
     const stockPriceHistory = await this.stockPriceDataloader.stockPriceBySymbols.load(stockSummary.symbol)
 
-    if (!stockPriceHistory) return null
+    if (!stockPriceHistory) return 0
 
     return stockSummary.quantity * stockPriceHistory.base * crossRate
   }
 
-  @ResolveField("pricePerUnitInDefaultCurrency", () => Float, {
+  @ResolveField("pricePerShareInDefaultCurrency", () => Float, {
     nullable: true,
     description: "계정 기본 통화로 환산한 현재 가치 개당 가격",
   })
@@ -103,19 +104,19 @@ export class StockSummaryResolver {
     @UserDecoded() jwtPayload: JwtPayload,
     @Parent() stockSummary: StockSummary,
   ) {
-    if (!stockSummary.currency || !stockSummary.symbol) return null
+    if (!stockSummary.currency || !stockSummary.symbol) return 0
 
     const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(stockSummary.currency)
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[stockSummary.currency]
 
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return null
+    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
 
     const stockPriceHistory = await this.stockPriceDataloader.stockPriceBySymbols.load(stockSummary.symbol)
 
-    if (!stockPriceHistory) return null
+    if (!stockPriceHistory) return 0
 
     return stockPriceHistory.base * crossRate
   }
@@ -123,14 +124,14 @@ export class StockSummaryResolver {
   @ResolveField("differenceRate", () => Float, { nullable: true, description: "차액률" })
   async resolveDifferenceRate(@Parent() stockSummary: StockSummary) {
     const currentAmount = await this.resolveCurrentAmount(stockSummary)
-    if (!currentAmount) return null
+    if (!currentAmount) return 0
     return (currentAmount - stockSummary.amount) / stockSummary.amount
   }
 
   @ResolveField("earned", () => Float, { nullable: true, description: "수익" })
   async resolveEarned(@Parent() stockSummary: StockSummary) {
     const currentAmount = await this.resolveCurrentAmount(stockSummary)
-    if (!currentAmount) return null
+    if (!currentAmount) return 0
     return currentAmount - stockSummary.amount
   }
 
@@ -138,7 +139,7 @@ export class StockSummaryResolver {
   async resolveEarnedInDefaultCurrency(@UserDecoded() jwtPayload: JwtPayload, @Parent() stockSummary: StockSummary) {
     const amount = await this.resolveAmountInDefaultCurrency(jwtPayload, stockSummary)
     const currentAmount = await this.resolveCurrentAmountInDefaultCurrency(jwtPayload, stockSummary)
-    if (!amount || !currentAmount) return null
+    if (!amount || !currentAmount) return 0
     return currentAmount - amount
   }
 
@@ -147,7 +148,6 @@ export class StockSummaryResolver {
     if (stockSummary.type !== SummaryType.CASH) return 0
     const totalStocks = await this.stockSummaryService.totalStocks(stockSummary)
     const amounts = await Promise.all(totalStocks.map((stock) => this.resolveCurrentAmount(stock)))
-    console.log('amounts', amounts)
     return amounts.reduce((acc, currentAmount) => acc + currentAmount, 0)
   }
 
