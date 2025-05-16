@@ -25,7 +25,7 @@ export class BankTransaction {
   @Field(() => Float, { description: "금액" })
   @Column({
     type: "decimal",
-    precision: 10,
+    precision: 20,
     scale: 3,
     transformer: {
       to: (value: number) => value,
