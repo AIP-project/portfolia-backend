@@ -86,23 +86,25 @@ export class AccountService {
       const { bankSummary, stockSummary, coinSummary, ...accountInput } = cleanInput
       const account = await manager.save(Account, accountInput)
       if (account.type === AccountType.BANK) {
-        await manager.save(BankSummary, { accountId: account.id, ...bankSummary })
+        await manager.save(BankSummary, { accountId: account.id, currency: account.currency, ...bankSummary })
       } else if (account.type === AccountType.STOCK) {
         await manager.save(StockSummary, {
           accountId: account.id,
           type: SummaryType.CASH,
+          currency: account.currency,
           ...stockSummary,
         })
       } else if (account.type === AccountType.COIN) {
         await manager.save(CoinSummary, {
           accountId: account.id,
           type: SummaryType.CASH,
+          currency: account.currency,
           ...coinSummary,
         })
       } else if (account.type === AccountType.ETC) {
-        await manager.save(EtcSummary, { accountId: account.id })
+        await manager.save(EtcSummary, { accountId: account.id, currency: account.currency })
       } else if (account.type === AccountType.LIABILITIES) {
-        await manager.save(LiabilitiesSummary, { accountId: account.id })
+        await manager.save(LiabilitiesSummary, { accountId: account.id, currency: account.currency })
       }
       return account
     })
