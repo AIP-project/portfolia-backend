@@ -9,6 +9,7 @@ import {
 } from "typeorm"
 import { Account } from "../../account/entities/account.entity"
 import { Field, Float, ObjectType } from "@nestjs/graphql"
+import { CurrencyType } from "../../common"
 
 @ObjectType()
 @Entity()
@@ -63,6 +64,14 @@ export class BankSummary {
     },
   })
   balance!: number
+
+  @Field(() => CurrencyType, { description: "은행 요약 정보 통화", nullable: true })
+  @Column({
+    type: "enum",
+    enum: CurrencyType,
+    nullable: true,
+  })
+  currency?: CurrencyType
 
   @Field({ description: "은행 요약 삭제 여부", nullable: true })
   @Column({
