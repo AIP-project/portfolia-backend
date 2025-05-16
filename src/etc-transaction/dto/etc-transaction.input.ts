@@ -33,7 +33,6 @@ export class EtcTransactionInput {
   @Field({ nullable: true, description: "기타 거래 기관" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   operation?: string
 
   @Field({ nullable: true, description: "기타 거래 타입" })
