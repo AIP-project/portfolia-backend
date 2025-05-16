@@ -2,10 +2,12 @@ import { Field, Float, InputType, OmitType } from "@nestjs/graphql"
 import { StockTransactionInput } from "./stock-transaction.input"
 import { IsEnum, IsNumber, IsString, MinLength } from "class-validator"
 import { TransactionType } from "../../common"
+import { Transform } from "class-transformer"
 
 @InputType()
 export class CreateStockTransactionInput extends OmitType(StockTransactionInput, ["id"]) {
   @Field({ nullable: false, description: "주식 거래 심볼" })
+  @Transform(({ value }) => (typeof value === "string" ? value.toUpperCase() : value)) // 대문자 변환
   @IsString()
   @MinLength(2)
   symbol!: string

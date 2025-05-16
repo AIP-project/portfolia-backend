@@ -24,7 +24,12 @@ export class StockTransaction {
   name?: string
 
   @Field({ description: "주식 거래 심볼" })
-  @Column()
+  @Column({
+    transformer: {
+      to: (value: string) => value?.toUpperCase(),
+      from: (value: string) => value?.toUpperCase(),
+    },
+  })
   @Index()
   symbol!: string
 

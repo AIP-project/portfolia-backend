@@ -28,7 +28,13 @@ export class StockSummary {
   accountNumber?: string
 
   @Field({ description: "주식 요약 정보 심볼", nullable: true })
-  @Column({ nullable: true })
+  @Column({
+    nullable: true,
+    transformer: {
+      to: (value: string) => value?.toUpperCase(),
+      from: (value: string) => value?.toUpperCase(),
+    },
+  })
   @Index()
   symbol?: string
 

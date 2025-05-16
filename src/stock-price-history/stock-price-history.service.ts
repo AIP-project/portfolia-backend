@@ -37,6 +37,11 @@ export class StockPriceHistoryService {
     const bulkStockPriceHistory = []
 
     for (const distinctStockGroup of distinctStockGroups) {
+      if (!distinctStockGroup.stockCompanyCode) {
+        this.logger.warn(`No stock company code found for symbol "${distinctStockGroup.symbol}"`)
+        continue
+      }
+
       const url = `${interfaceConfig.stockPriceApiUrl}${distinctStockGroup.stockCompanyCode}`
       const stockInfo = await firstValueFrom(
         this.httpService.get(url).pipe(
