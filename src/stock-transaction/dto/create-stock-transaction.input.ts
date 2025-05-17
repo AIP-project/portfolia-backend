@@ -9,7 +9,6 @@ export class CreateStockTransactionInput extends OmitType(StockTransactionInput,
   @Field({ nullable: false, description: "주식 거래 심볼" })
   @Transform(({ value }) => (typeof value === "string" ? value.toUpperCase() : value)) // 대문자 변환
   @IsString()
-  @MinLength(2)
   symbol!: string
 
   @Field(() => Float, { nullable: false, description: "주식 거래 수량" })

@@ -12,7 +12,6 @@ export class BankTransactionInput {
   @Field({ nullable: true, description: "은행 거래 명" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   name?: string
 
   @Field(() => Float, { nullable: true, description: "거래 금액" })

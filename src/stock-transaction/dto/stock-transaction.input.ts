@@ -13,14 +13,12 @@ export class StockTransactionInput {
   @Field({ nullable: true, description: "주식 거래 이름" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   name?: string
 
   @Field({ nullable: true, description: "주식 거래 심볼" })
   @Transform(({ value }) => (typeof value === "string" ? value.toUpperCase() : value)) // 대문자 변환
   @IsOptional()
   @IsString()
-  @MinLength(2)
   symbol?: string
 
   @Field(() => Float, { nullable: true, description: "주식 거래 수량" })

@@ -13,7 +13,6 @@ export class UserInput {
   @Field({ nullable: true, description: "사용자 이름" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   name?: string
 
   @Field({ nullable: true, description: "사용자 이메일" })

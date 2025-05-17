@@ -18,7 +18,6 @@ export class CoinTransactionInput {
   @Field({ description: "코인 심볼", nullable: true })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   symbol?: string
 
   @Field({ description: "코인 유니크 키", nullable: true })

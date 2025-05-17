@@ -7,7 +7,6 @@ import { TransactionType } from "../../common"
 export class CreateCoinTransactionInput extends OmitType(CoinTransactionInput, ["id"]) {
   @Field({ description: "코인 심볼", nullable: false })
   @IsString()
-  @MinLength(2)
   symbol!: string
 
   @Field(() => Float, { description: "코인 수량", nullable: false })

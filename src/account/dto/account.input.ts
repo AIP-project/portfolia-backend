@@ -12,7 +12,6 @@ export class AccountInput {
   @Field({ nullable: true, description: "계좌 별칭" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   nickName?: string
 
   @Field(() => AccountType, { nullable: true, description: "계좌 타입" })

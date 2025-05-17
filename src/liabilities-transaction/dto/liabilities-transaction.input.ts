@@ -12,7 +12,6 @@ export class LiabilitiesTransactionInput {
   @Field({ nullable: true, description: "부채 이름" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   name?: string
 
   @Field(() => Float, { nullable: true, description: "부채 금액" })
@@ -38,7 +37,6 @@ export class LiabilitiesTransactionInput {
   @Field({ nullable: true, description: "부채 거래 기관" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   operation?: string
 
   @Field({ nullable: true, description: "연이율 여부" })

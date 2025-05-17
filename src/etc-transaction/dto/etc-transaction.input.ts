@@ -12,7 +12,6 @@ export class EtcTransactionInput {
   @Field({ nullable: true, description: "기타 거래 이름" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   name?: string
 
   @Field(() => Float, { nullable: true, description: "기타 거래 구매가격" })

@@ -6,7 +6,6 @@ import { IsNumber, IsString, MinLength } from "class-validator"
 export class CreateLiabilitiesTransactionInput extends OmitType(LiabilitiesTransactionInput, ["id"]) {
   @Field({ nullable: false })
   @IsString()
-  @MinLength(2)
   name!: string
 
   @Field(() => Float, { nullable: false })
