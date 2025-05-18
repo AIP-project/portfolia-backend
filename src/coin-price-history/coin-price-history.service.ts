@@ -66,6 +66,11 @@ export class CoinPriceHistoryService {
       if (coinArray.length > 0) {
         const coin = coinArray[0]
 
+        if (!coin.quote.USD || !coin.quote.USD.price) {
+          this.logger.error(`Coin "${symbol}" does not have USD quote data`)
+          return
+        }
+
         bulkCoinPriceHistory.push({
           symbol: symbol,
           currency: "USD",
