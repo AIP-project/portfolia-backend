@@ -5,6 +5,9 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "engines": {
+    "node": "v20"
+  },
   "scripts": {
     "========== Local ==========": "",
     "docker:compose": "ts-node --project ./tsconfig.json ./deploy/docker-compose.ts",

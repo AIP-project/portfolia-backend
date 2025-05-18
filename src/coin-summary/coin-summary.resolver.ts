@@ -101,9 +101,11 @@ export class CoinSummaryResolver {
 
     const coinPriceHistory = await this.coinPriceDataloader.coinPriceBySymbols.load(coinSummary.symbol)
 
+    if (!coinPriceHistory) return 0
+
     const historyCurrencyRate = exchangeRate.exchangeRates[coinPriceHistory.currency]
 
-    if (!coinPriceHistory || !historyCurrencyRate) return 0
+    if (!historyCurrencyRate) return 0
 
     return ((coinSummary.quantity * coinPriceHistory.price * historyCurrencyRate) / summaryCurrencyRate) * crossRate
   }
@@ -128,9 +130,11 @@ export class CoinSummaryResolver {
 
     const coinPriceHistory = await this.coinPriceDataloader.coinPriceBySymbols.load(coinSummary.symbol)
 
+    if (!coinPriceHistory) return 0
+
     const historyCurrencyRate = exchangeRate.exchangeRates[coinPriceHistory.currency]
 
-    if (!coinPriceHistory || !historyCurrencyRate) return 0
+    if (!historyCurrencyRate) return 0
 
     return ((coinPriceHistory.price * historyCurrencyRate) / summaryCurrencyRate) * crossRate
   }
