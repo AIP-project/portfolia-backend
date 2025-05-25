@@ -11,6 +11,9 @@ import { ExternalServiceException, InterfaceConfig } from "../common"
 import { firstValueFrom } from "rxjs"
 import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
+import { BankSummary } from "../bank-summary/entities"
+import { EtcSummary } from "../etc-summary/entities"
+import { LiabilitiesSummary } from "../liabilities-summary/entities"
 
 @Injectable()
 export class ExchangeService {
@@ -23,6 +26,12 @@ export class ExchangeService {
   ) {}
 
   async updateExchange() {
+    const bankCurrencies = await this.exchangeRateRepository.manager
+      .createQueryBuilder(BankSummary, "bankSummary")
+      .select("bank.currency")
+      .groupBy("bank.currency")
+      .getRawMany()
+
     const stockCurrencies = await this.exchangeRateRepository.manager
       .createQueryBuilder(StockSummary, "stockSummary")
       .select("stockSummary.currency")
@@ -35,18 +44,32 @@ export class ExchangeService {
       .groupBy("coinSummary.currency")
       .getRawMany()
 
-    const accountCurrencies = await this.exchangeRateRepository.manager
-      .createQueryBuilder(Account, "account")
-      .select("account.currency")
-      .groupBy("account.currency")
+    const etcCurrencies = await this.exchangeRateRepository.manager
+      .createQueryBuilder(EtcSummary, "etcSummary")
+      .select("etcSummary.currency")
+      .groupBy("etcSummary.currency")
       .getRawMany()
 
+    const liabilitiesCurrencies = await this.exchangeRateRepository.manager
+      .createQueryBuilder(LiabilitiesSummary, "liabilitiesSummary")
+      .select("liabilitiesSummary.currency")
+      .groupBy("liabilitiesSummary.currency")
+      .getRawMany()
+
+    const bankCurrencyValues = bankCurrencies.map((item) => item.bankSummary_currency)
     const stockCurrencyValues = stockCurrencies.map((item) => item.stockSummary_currency)
     const coinCurrencyValues = coinCurrencies.map((item) => item.coinSummary_currency)
-    const accountCurrencyValues = accountCurrencies.map((item) => item.account_currency)
+    const etcCurrencyValues = coinCurrencies.map((item) => item.etcSummary_currency)
+    const liabilitiesCurrencyValues = coinCurrencies.map((item) => item.liabilitiesSummary_currency)
 
     const uniqueCurrencies = [
-      ...new Set([...stockCurrencyValues, ...coinCurrencyValues, ...accountCurrencyValues]),
+      ...new Set([
+        ...bankCurrencyValues,
+        ...stockCurrencyValues,
+        ...coinCurrencyValues,
+        ...etcCurrencyValues,
+        ...liabilitiesCurrencyValues,
+      ]),
     ].filter((currency) => currency !== null && currency !== undefined)
 
     const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!

@@ -13,10 +13,6 @@ export class AccountsArgs extends PageSearchArgs {
   @IsOptional()
   type?: AccountType
 
-  @Field(() => CurrencyType, { nullable: true, description: "계좌 통화" })
-  @IsOptional()
-  currency?: CurrencyType
-
   @Field(() => Number, { nullable: true, description: "사용자 ID" })
   @IsOptional()
   @IsNumber()

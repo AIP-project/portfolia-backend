@@ -49,13 +49,13 @@ export class CoinTransactionService {
     if (existingAccount.type !== AccountType.COIN) throw new ValidationException(ErrorMessage.MSG_NOT_COIN_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
-    if (!coinTransactionInput.currency) cleanInput.currency = existingAccount.currency
 
     const existCashSummary = await this.coinSummaryRepository.findOne({
       where: { accountId: coinTransactionInput.accountId, type: SummaryType.CASH, isDelete: false },
     })
 
     if (!existCashSummary) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_COIN_SUMMARY)
+    cleanInput.currency = existCashSummary.currency
 
     const existCoinSummary = await this.coinSummaryRepository.findOne({
       where: {

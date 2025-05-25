@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
-import { EntityManager, FindOptionsWhere, ILike, Repository } from "typeorm"
+import { EntityManager, FindOptionsWhere, ILike, In, Repository } from "typeorm"
 import { Account } from "./entities/account.entity"
 import { AccountInput, AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
 import { BankSummary } from "../bank-summary/entities"
@@ -23,6 +23,9 @@ import { StockTransaction } from "../stock-transaction/entities"
 import { CoinTransaction } from "../coin-transaction/entities"
 import { EtcTransaction } from "../etc-transaction/entities"
 import { LiabilitiesTransaction } from "../liabilities-transaction/entities"
+import { ExchangeRate } from "../exchange/entities/exchange-rate.entity"
+import { CoinPriceHistory } from "../coin-price-history/entities"
+import { StockPriceHistory } from "../stock-price-history/entities"
 
 @Injectable()
 export class AccountService {
@@ -111,7 +114,7 @@ export class AccountService {
   }
 
   async accounts(jwtPayload: JwtPayload, accountsArgs: AccountsArgs) {
-    const { page = 1, take = 10, sortBy = [], name, type, currency, userId } = accountsArgs
+    const { page = 1, take = 10, sortBy = [], name, type, userId } = accountsArgs
     const skip = (page - 1) * take
 
     let searchUserId = jwtPayload.id
@@ -129,7 +132,6 @@ export class AccountService {
     if (searchUserId) whereConditions.user = { id: searchUserId }
     if (name) whereConditions.nickName = ILike(`%${name}%`)
     if (type) whereConditions.type = type
-    if (currency) whereConditions.currency = currency
 
     // Order by 설정
     const order =
@@ -378,84 +380,147 @@ export class AccountService {
     let liabilitiesTotalAmount = 0
     let cashTotalAmount = 0
 
+    const exchangeRateOne = await this.accountRepository.manager.findOne(ExchangeRate, {
+      where: {},
+      order: { createdAt: "DESC" },
+    })
+    if (!exchangeRateOne) return null
+
+    const exchangeRate = exchangeRateOne.exchangeRates
+
+    console.log("exchangeRate: ", exchangeRate)
+    console.log("jwt payload", jwtPayload)
+
+    const defaultCurrencyRate = exchangeRate[jwtPayload.currency]
+
+    console.log("defaultCurrencyRate: ", defaultCurrencyRate)
+
+    const coinSymbols = coinSummary
+      .filter((summary) => summary.type === SummaryType.SUMMARY)
+      .map((summary) => summary.symbol)
+
+    console.log("coinSymbols: ", coinSymbols)
+
+    let coinPriceHistories: CoinPriceHistory[] = []
+    if (coinSymbols.length > 0) {
+      coinPriceHistories = await this.accountRepository.manager
+        .createQueryBuilder(CoinPriceHistory, "cph")
+        .where("cph.symbol IN (:...coinSymbols)", { coinSymbols })
+        .distinctOn(["cph.symbol"])
+        .orderBy("cph.symbol")
+        .addOrderBy("cph.createdAt", "DESC")
+        .getMany()
+    }
+
     for (const summary of coinSummary) {
       const accountName = (await summary.account).nickName
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      const currentPrice = coinPriceHistories.find((cph) => cph.symbol === summary.symbol)?.price
+      const amountInDefaultCurrency = (currentPrice || summary.amount) * crossRate
 
       if (summary.type === SummaryType.CASH) {
         const existingCash = cash.find((s) => s.name === accountName)
         if (existingCash) {
-          existingCash.amount = addAmount(existingCash.amount, summary.amount)
+          existingCash.amount = addAmount(existingCash.amount, amountInDefaultCurrency)
         } else {
-          cash.push({ name: accountName, amount: summary.amount })
+          cash.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.COIN })
         }
-        cashTotalAmount = addAmount(cashTotalAmount, summary.amount)
+        cashTotalAmount = addAmount(cashTotalAmount, amountInDefaultCurrency)
       } else {
         const existingSummary = assets.find((s) => s.name === accountName)
         if (existingSummary) {
-          existingSummary.amount = addAmount(existingSummary.amount, summary.amount)
+          existingSummary.amount = addAmount(existingSummary.amount, amountInDefaultCurrency)
         } else {
-          assets.push({ name: accountName, amount: summary.amount })
+          assets.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.COIN })
         }
-        assetTotalAmount = addAmount(assetTotalAmount, summary.amount)
+        assetTotalAmount = addAmount(assetTotalAmount, amountInDefaultCurrency)
       }
+    }
+
+    const stockSymbols = stockSummary
+      .filter((summary) => summary.type === SummaryType.SUMMARY)
+      .map((summary) => summary.symbol)
+    let stockPriceHistories: StockPriceHistory[] = []
+    if (stockSymbols.length > 0) {
+      stockPriceHistories = await this.accountRepository.manager
+        .createQueryBuilder(StockPriceHistory, "sph")
+        .where("sph.symbol IN (:...stockSymbols)", { stockSymbols })
+        .distinctOn(["sph.symbol"])
+        .orderBy("sph.symbol")
+        .addOrderBy("sph.createdAt", "DESC")
+        .getMany()
     }
 
     for (const summary of stockSummary) {
       const accountName = (await summary.account).nickName
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      const currentPrice = stockPriceHistories.find((sph) => sph.symbol === summary.symbol)?.base
+      const amountInDefaultCurrency = (currentPrice || summary.amount) * crossRate
 
       if (summary.type === SummaryType.CASH) {
         const existingCash = cash.find((s) => s.name === accountName)
         if (existingCash) {
-          existingCash.amount = addAmount(existingCash.amount, summary.amount)
+          existingCash.amount = addAmount(existingCash.amount, amountInDefaultCurrency)
         } else {
-          cash.push({ name: accountName, amount: summary.amount })
+          cash.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.STOCK })
         }
-        cashTotalAmount = addAmount(cashTotalAmount, summary.amount)
+        cashTotalAmount = addAmount(cashTotalAmount, amountInDefaultCurrency)
       } else {
         const existingSummary = assets.find((s) => s.name === accountName)
         if (existingSummary) {
-          existingSummary.amount = addAmount(existingSummary.amount, summary.amount)
+          existingSummary.amount = addAmount(existingSummary.amount, amountInDefaultCurrency)
         } else {
-          assets.push({ name: accountName, amount: summary.amount })
+          assets.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.STOCK })
         }
-        assetTotalAmount = addAmount(assetTotalAmount, summary.amount)
+        assetTotalAmount = addAmount(assetTotalAmount, amountInDefaultCurrency)
       }
     }
 
     for (const summary of etcSummary) {
       const accountName = (await summary.account).nickName
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      const amountInDefaultCurrency = (summary.currentPrice || summary.purchasePrice) * crossRate
 
       const existingSummary = assets.find((s) => s.name === accountName)
       if (existingSummary) {
-        existingSummary.amount = addAmount(existingSummary.amount, summary.currentPrice)
+        existingSummary.amount = addAmount(existingSummary.amount, amountInDefaultCurrency)
       } else {
-        assets.push({ name: accountName, amount: summary.currentPrice })
+        assets.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.ETC })
       }
-      assetTotalAmount = addAmount(assetTotalAmount, summary.currentPrice)
+      assetTotalAmount = addAmount(assetTotalAmount, amountInDefaultCurrency)
     }
 
     for (const summary of liabilitiesSummary) {
       const accountName = (await summary.account).nickName
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      const amountInDefaultCurrency = (summary.remainingAmount || summary.amount) * crossRate
 
       const existingSummary = liabilities.find((s) => s.name === accountName)
       if (existingSummary) {
-        existingSummary.amount = addAmount(existingSummary.amount, summary.remainingAmount)
+        existingSummary.amount = addAmount(existingSummary.amount, amountInDefaultCurrency)
       } else {
-        liabilities.push({ name: accountName, amount: summary.remainingAmount })
+        liabilities.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.LIABILITIES })
       }
-      liabilitiesTotalAmount = addAmount(liabilitiesTotalAmount, summary.remainingAmount)
+      liabilitiesTotalAmount = addAmount(liabilitiesTotalAmount, amountInDefaultCurrency)
     }
 
     for (const summary of bankSummary) {
       const accountName = (await summary.account).nickName
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      const amountInDefaultCurrency = summary.balance * crossRate
 
       const existingCash = cash.find((s) => s.name === accountName)
       if (existingCash) {
-        existingCash.amount = addAmount(existingCash.amount, summary.balance)
+        existingCash.amount = addAmount(existingCash.amount, amountInDefaultCurrency)
       } else {
-        cash.push({ name: accountName, amount: summary.balance })
+        cash.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.BANK })
       }
-      cashTotalAmount = addAmount(cashTotalAmount, summary.balance)
+      cashTotalAmount = addAmount(cashTotalAmount, amountInDefaultCurrency)
     }
 
     return {
@@ -485,11 +550,41 @@ export class AccountService {
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
     })
 
-    const totalBank = bankSummary.reduce((acc, summary) => addAmount(acc, summary.balance), 0)
-    const totalStock = stockSummary.reduce((acc, summary) => addAmount(acc, summary.amount), 0)
-    const totalCoin = coinSummary.reduce((acc, summary) => addAmount(acc, summary.amount), 0)
-    const totalEtc = etcSummary.reduce((acc, summary) => addAmount(acc, summary.currentPrice), 0)
-    const totalLiabilities = liabilitiesSummary.reduce((acc, summary) => addAmount(acc, summary.remainingAmount), 0)
+    const exchangeRateOne = await this.accountRepository.manager.findOne(ExchangeRate, {
+      where: {},
+      order: { createdAt: "DESC" },
+    })
+    if (!exchangeRateOne) return null
+
+    const exchangeRate = exchangeRateOne.exchangeRates
+
+    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
+
+    const totalBank = bankSummary.reduce((acc, summary) => {
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      return addAmount(acc, summary.balance * crossRate)
+    }, 0)
+    const totalStock = stockSummary.reduce((acc, summary) => {
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      return addAmount(acc, summary.amount * crossRate)
+    }, 0)
+    const totalCoin = coinSummary.reduce((acc, summary) => {
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      return addAmount(acc, summary.amount * crossRate)
+    }, 0)
+    const totalEtc = etcSummary.reduce((acc, summary) => {
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      return addAmount(acc, (summary.currentPrice || summary.purchasePrice) * crossRate)
+    }, 0)
+    const totalLiabilities = liabilitiesSummary.reduce((acc, summary) => {
+      const summaryCurrencyRate = exchangeRate[summary.currency]
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
+      return addAmount(acc, (summary.remainingAmount || summary.amount) * crossRate)
+    }, 0)
 
     return {
       bank: totalBank,

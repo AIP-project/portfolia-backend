@@ -125,7 +125,7 @@ export class StockSummaryResolver {
   async resolveDifferenceRate(@Parent() stockSummary: StockSummary) {
     const currentAmount = await this.resolveCurrentAmount(stockSummary)
     if (!currentAmount) return 0
-    return (currentAmount - stockSummary.amount) / stockSummary.amount
+    return (currentAmount - stockSummary.amount) / stockSummary.amount * 100
   }
 
   @ResolveField("earned", () => Float, { nullable: true, description: "수익" })
