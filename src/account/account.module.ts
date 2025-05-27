@@ -3,9 +3,10 @@ import { AccountService } from "./account.service"
 import { AccountResolver } from "./account.resolver"
 import { TypeOrmModule } from "@nestjs/typeorm"
 import { Account } from "./entities/account.entity"
+import { StockSummaryModule } from "../stock-summary/stock-summary.module"
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Account])],
+  imports: [TypeOrmModule.forFeature([Account]), StockSummaryModule],
   providers: [AccountResolver, AccountService],
 })
 export class AccountModule {}

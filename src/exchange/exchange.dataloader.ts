@@ -4,7 +4,7 @@ import * as DataLoader from "dataloader"
 import { ExchangeRate } from "./entities/exchange-rate.entity"
 
 @Injectable({ scope: Scope.REQUEST })
-export class ExchangeDataloader {
+export class ExchangeDataLoader {
   constructor(private readonly exchangeService: ExchangeService) {}
 
   public readonly batchLoadExchange = new DataLoader<string, ExchangeRate | null>(

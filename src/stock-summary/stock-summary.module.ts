@@ -6,9 +6,11 @@ import { Account } from "../account/entities/account.entity"
 import { StockSummary } from "./entities"
 import { ExchangeModule } from "../exchange/exchange.module"
 import { StockPriceHistoryModule } from "../stock-price-history/stock-price-history.module"
+import { StockSummaryDataLoader } from "./stock-summary.dataloader"
 
 @Module({
   imports: [TypeOrmModule.forFeature([StockSummary, Account]), ExchangeModule, StockPriceHistoryModule],
-  providers: [StockSummaryResolver, StockSummaryService],
+  providers: [StockSummaryResolver, StockSummaryService, StockSummaryDataLoader],
+  exports: [StockSummaryDataLoader]
 })
 export class StockSummaryModule {}

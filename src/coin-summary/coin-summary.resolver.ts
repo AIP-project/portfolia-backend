@@ -3,15 +3,15 @@ import { CoinSummaryService } from "./coin-summary.service"
 import { CoinSummary } from "./entities"
 import { CurrencyType, JwtPayload, SummaryType, UserDecoded } from "../common"
 import { CoinSummaries, CoinSummariesArgs, UpdateCoinSummaryInput } from "./dto"
-import { CoinPriceDataloader } from "../coin-price-history/coin-price.dataloader"
-import { ExchangeDataloader } from "../exchange/exchange.dataloader"
+import { CoinPriceDataLoader } from "../coin-price-history/coin-price.dataloader"
+import { ExchangeDataLoader } from "../exchange/exchange.dataloader"
 
 @Resolver(() => CoinSummary)
 export class CoinSummaryResolver {
   constructor(
     private readonly coinSummaryService: CoinSummaryService,
-    private readonly exchangeDataloader: ExchangeDataloader,
-    private readonly coinPriceDataloader: CoinPriceDataloader,
+    private readonly exchangeDataLoader: ExchangeDataLoader,
+    private readonly coinPriceDataLoader: CoinPriceDataLoader,
   ) {}
 
   @Query(() => CoinSummaries, { description: "코인 요약 정보 조회" })
@@ -39,7 +39,7 @@ export class CoinSummaryResolver {
   async resolveAmountInDefaultCurrency(@UserDecoded() jwtPayload: JwtPayload, @Parent() coinSummary: CoinSummary) {
     if (!coinSummary.currency) return 0
 
-    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(coinSummary.currency)
+    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
 
     if (!exchangeRate) return 0
 
@@ -63,10 +63,10 @@ export class CoinSummaryResolver {
   async resolveCurrentAmount(@Parent() coinSummary: CoinSummary) {
     if (!coinSummary.currency || !coinSummary.symbol) return 0
 
-    const coinPriceHistory = await this.coinPriceDataloader.coinPriceBySymbols.load(coinSummary.symbol)
+    const coinPriceHistory = await this.coinPriceDataLoader.coinPriceBySymbols.load(coinSummary.symbol)
     if (!coinPriceHistory) return 0
 
-    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(coinSummary.currency)
+    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
 
     if (!exchangeRate) return 0
 
@@ -88,7 +88,7 @@ export class CoinSummaryResolver {
   ) {
     if (!coinSummary.currency || !coinSummary.symbol) return 0
 
-    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(coinSummary.currency)
+    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
 
     if (!exchangeRate) return 0
 
@@ -99,7 +99,7 @@ export class CoinSummaryResolver {
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
 
-    const coinPriceHistory = await this.coinPriceDataloader.coinPriceBySymbols.load(coinSummary.symbol)
+    const coinPriceHistory = await this.coinPriceDataLoader.coinPriceBySymbols.load(coinSummary.symbol)
 
     if (!coinPriceHistory) return 0
 
@@ -120,7 +120,7 @@ export class CoinSummaryResolver {
   ) {
     if (!coinSummary.currency || !coinSummary.symbol) return 0
 
-    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(coinSummary.currency)
+    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[coinSummary.currency]
 
@@ -128,7 +128,7 @@ export class CoinSummaryResolver {
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
 
-    const coinPriceHistory = await this.coinPriceDataloader.coinPriceBySymbols.load(coinSummary.symbol)
+    const coinPriceHistory = await this.coinPriceDataLoader.coinPriceBySymbols.load(coinSummary.symbol)
 
     if (!coinPriceHistory) return 0
 
@@ -181,7 +181,7 @@ export class CoinSummaryResolver {
     if (coinSummary.type !== SummaryType.CASH) return 0
     const totalCoinValue = await this.resolveTotalCoinValue(coinSummary)
 
-    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(coinSummary.currency)
+    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[coinSummary.currency]
 

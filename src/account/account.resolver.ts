@@ -8,10 +8,14 @@ import { EtcSummary } from "../etc-summary/entities"
 import { LiabilitiesSummary } from "../liabilities-summary/entities"
 import { StockSummary } from "../stock-summary/entities"
 import { CoinSummary } from "../coin-summary/entities"
+import { StockSummaryDataLoader } from "../stock-summary/stock-summary.dataloader"
 
 @Resolver(() => Account)
 export class AccountResolver {
-  constructor(private readonly accountService: AccountService) {}
+  constructor(
+    private readonly accountService: AccountService,
+    private readonly stockSummaryDataLoader: StockSummaryDataLoader,
+  ) {}
 
   @Mutation(() => Account, { description: "계좌 생성" })
   async createAccount(@UserDecoded() jwtPayload: JwtPayload, @Args("input") createAccountInput: CreateAccountInput) {
@@ -39,8 +43,8 @@ export class AccountResolver {
   }
 
   @ResolveField("stockSummary", () => StockSummary, { nullable: true, description: "주식 요약 정보" })
-  async resolveStockSummary(@UserDecoded() payload: JwtPayload, @Parent() account: Account) {
-    return this.accountService.resolveStockSummary(payload, account)
+  async resolveStockSummary(@Parent() account: Account) {
+    return this.stockSummaryDataLoader.stockSummaryByAccountIdsAndCashType.load(account.id)
   }
 
   @ResolveField("coinSummary", () => CoinSummary, { nullable: true, description: "코인 요약 정보" })

@@ -67,7 +67,7 @@ export class CoinPriceHistoryService {
         const coin = coinArray[0]
 
         if (!coin.quote.USD || !coin.quote.USD.price) {
-          this.logger.error(`Coin "${symbol}" does not have USD quote data`)
+          this.logger.warn(`Coin "${symbol}" does not have USD quote data`)
           return
         }
 
@@ -88,18 +88,30 @@ export class CoinPriceHistoryService {
   }
 
   async findBySymbols(symbols: string[]) {
+    if (!symbols || symbols.length === 0) {
+      return []
+    }
+
+    // 1. 각 symbol 별로 가장 큰 id (최신 id)를 조회합니다.
+    const maxIdsResult = await this.coinPriceHistoryRepository
+      .createQueryBuilder("c")
+      .select("MAX(c.id)", "max_id")
+      .where("c.symbol IN (:...symbols)", { symbols })
+      .groupBy("c.symbol")
+      .getRawMany()
+
+    // 결과가 없으면 빈 배열 반환
+    if (maxIdsResult.length === 0) {
+      return []
+    }
+
+    // 조회된 max_id 값들만 추출합니다.
+    const latestIds = maxIdsResult.map((result) => result.max_id)
+
+    // 2. 추출된 id 목록을 사용하여 최종 데이터를 조회합니다.
     return this.coinPriceHistoryRepository
       .createQueryBuilder("cph")
-      .where("cph.symbol IN (:...symbols)", { symbols })
-      .andWhere((qb) => {
-        const subQuery = qb
-          .subQuery()
-          .select("MAX(c.id)")
-          .from(CoinPriceHistory, "c")
-          .where("c.symbol = cph.symbol")
-          .getQuery()
-        return "cph.id = " + subQuery
-      })
+      .where("cph.id IN (:...latestIds)", { latestIds })
       .getMany()
   }
 }

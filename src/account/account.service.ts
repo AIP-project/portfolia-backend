@@ -388,20 +388,14 @@ export class AccountService {
 
     const exchangeRate = exchangeRateOne.exchangeRates
 
-    console.log("exchangeRate: ", exchangeRate)
-    console.log("jwt payload", jwtPayload)
-
     const defaultCurrencyRate = exchangeRate[jwtPayload.currency]
-
-    console.log("defaultCurrencyRate: ", defaultCurrencyRate)
 
     const coinSymbols = coinSummary
       .filter((summary) => summary.type === SummaryType.SUMMARY)
       .map((summary) => summary.symbol)
 
-    console.log("coinSymbols: ", coinSymbols)
-
     let coinPriceHistories: CoinPriceHistory[] = []
+
     if (coinSymbols.length > 0) {
       coinPriceHistories = await this.accountRepository.manager
         .createQueryBuilder(CoinPriceHistory, "cph")
@@ -414,7 +408,12 @@ export class AccountService {
 
     for (const summary of coinSummary) {
       const accountName = (await summary.account).nickName
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const currentPrice = coinPriceHistories.find((cph) => cph.symbol === summary.symbol)?.price
       const amountInDefaultCurrency = (currentPrice || summary.amount) * crossRate
@@ -441,7 +440,9 @@ export class AccountService {
     const stockSymbols = stockSummary
       .filter((summary) => summary.type === SummaryType.SUMMARY)
       .map((summary) => summary.symbol)
+
     let stockPriceHistories: StockPriceHistory[] = []
+
     if (stockSymbols.length > 0) {
       stockPriceHistories = await this.accountRepository.manager
         .createQueryBuilder(StockPriceHistory, "sph")
@@ -454,7 +455,12 @@ export class AccountService {
 
     for (const summary of stockSummary) {
       const accountName = (await summary.account).nickName
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const currentPrice = stockPriceHistories.find((sph) => sph.symbol === summary.symbol)?.base
       const amountInDefaultCurrency = (currentPrice || summary.amount) * crossRate

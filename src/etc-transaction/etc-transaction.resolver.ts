@@ -3,13 +3,13 @@ import { JwtPayload, parseISOString, UserDecoded } from "../common"
 import { CreateEtcTransactionInput, EtcTransactions, EtcTransactionsArgs, UpdateEtcTransactionInput } from "./dto"
 import { EtcTransactionService } from "./etc-transaction.service"
 import { EtcTransaction } from "./entities"
-import { ExchangeDataloader } from "../exchange/exchange.dataloader"
+import { ExchangeDataLoader } from "../exchange/exchange.dataloader"
 
 @Resolver(() => EtcTransaction)
 export class EtcTransactionResolver {
   constructor(
     private readonly etcTransactionService: EtcTransactionService,
-    private readonly exchangeDataloader: ExchangeDataloader,
+    private readonly exchangeDataLoader: ExchangeDataLoader,
   ) {}
 
   @Mutation(() => EtcTransaction)
@@ -53,7 +53,7 @@ export class EtcTransactionResolver {
   ) {
     if (!etcTransaction.currency || !etcTransaction.currentPrice) return 0
 
-    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(etcTransaction.currency)
+    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(etcTransaction.currency)
 
     if (!exchangeRate) return 0
 

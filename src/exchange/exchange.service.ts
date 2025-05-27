@@ -28,8 +28,8 @@ export class ExchangeService {
   async updateExchange() {
     const bankCurrencies = await this.exchangeRateRepository.manager
       .createQueryBuilder(BankSummary, "bankSummary")
-      .select("bank.currency")
-      .groupBy("bank.currency")
+      .select("bankSummary.currency")
+      .groupBy("bankSummary.currency")
       .getRawMany()
 
     const stockCurrencies = await this.exchangeRateRepository.manager
@@ -91,14 +91,6 @@ export class ExchangeService {
     })
 
     return "success"
-  }
-
-  async findByIds(ids: number[]) {
-    return this.exchangeRateRepository.find({
-      where: {
-        id: In(ids),
-      },
-    })
   }
 
   async lastOneLoad() {

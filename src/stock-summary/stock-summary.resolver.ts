@@ -3,15 +3,18 @@ import { StockSummaryService } from "./stock-summary.service"
 import { StockSummary } from "./entities"
 import { CurrencyType, JwtPayload, SummaryType, UserDecoded } from "../common"
 import { StockSummaries, StockSummariesArgs, UpdateStockSummaryInput } from "./dto"
-import { ExchangeDataloader } from "../exchange/exchange.dataloader"
-import { StockPriceDataloader } from "../stock-price-history/stock-price.dataloader"
+import { ExchangeDataLoader } from "../exchange/exchange.dataloader"
+import { StockPriceDataLoader } from "../stock-price-history/stock-price.dataloader"
+import { StockSummaryDataLoader } from "./stock-summary.dataloader"
+import { performance } from "perf_hooks"
 
 @Resolver(() => StockSummary)
 export class StockSummaryResolver {
   constructor(
     private readonly stockSummaryService: StockSummaryService,
-    private readonly exchangeDataloader: ExchangeDataloader,
-    private readonly stockPriceDataloader: StockPriceDataloader,
+    private readonly exchangeDataLoader: ExchangeDataLoader,
+    private readonly stockPriceDataLoader: StockPriceDataLoader,
+    private readonly stockSummaryDataLoader: StockSummaryDataLoader,
   ) {}
 
   @Query(() => StockSummaries, { description: "주식 요약 정보 조회" })
@@ -39,7 +42,7 @@ export class StockSummaryResolver {
   async resolveAmountInDefaultCurrency(@UserDecoded() jwtPayload: JwtPayload, @Parent() stockSummary: StockSummary) {
     if (!stockSummary.currency) return 0
 
-    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(stockSummary.currency)
+    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(stockSummary.currency)
 
     if (!exchangeRate) return 0
 
@@ -63,8 +66,9 @@ export class StockSummaryResolver {
   async resolveCurrentAmount(@Parent() stockSummary: StockSummary) {
     if (!stockSummary.symbol) return 0
 
-    const stockPriceHistory = await this.stockPriceDataloader.stockPriceBySymbols.load(stockSummary.symbol)
+    const stockPriceHistory = await this.stockPriceDataLoader.stockPriceBySymbols.load(stockSummary.symbol)
     if (!stockPriceHistory) return 0
+
     return stockSummary.quantity * stockPriceHistory.base
   }
 
@@ -78,7 +82,7 @@ export class StockSummaryResolver {
   ) {
     if (!stockSummary.currency || !stockSummary.symbol) return 0
 
-    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(stockSummary.currency)
+    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(stockSummary.currency)
 
     if (!exchangeRate) return 0
 
@@ -89,7 +93,7 @@ export class StockSummaryResolver {
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
 
-    const stockPriceHistory = await this.stockPriceDataloader.stockPriceBySymbols.load(stockSummary.symbol)
+    const stockPriceHistory = await this.stockPriceDataLoader.stockPriceBySymbols.load(stockSummary.symbol)
 
     if (!stockPriceHistory) return 0
 
@@ -106,7 +110,7 @@ export class StockSummaryResolver {
   ) {
     if (!stockSummary.currency || !stockSummary.symbol) return 0
 
-    const exchangeRate = await this.exchangeDataloader.batchLoadExchange.load(stockSummary.currency)
+    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(stockSummary.currency)
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[stockSummary.currency]
 
@@ -114,7 +118,7 @@ export class StockSummaryResolver {
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
 
-    const stockPriceHistory = await this.stockPriceDataloader.stockPriceBySymbols.load(stockSummary.symbol)
+    const stockPriceHistory = await this.stockPriceDataLoader.stockPriceBySymbols.load(stockSummary.symbol)
 
     if (!stockPriceHistory) return 0
 
@@ -146,8 +150,8 @@ export class StockSummaryResolver {
   @ResolveField("totalStockValue", () => Float, { nullable: true, description: "보유 주식 총 가치" })
   async resolveTotalStockValue(@Parent() stockSummary: StockSummary) {
     if (stockSummary.type !== SummaryType.CASH) return 0
-    const totalStocks = await this.stockSummaryService.totalStocks(stockSummary)
-    const amounts = await Promise.all(totalStocks.map((stock) => this.resolveCurrentAmount(stock)))
+    const totalStocks = await this.stockSummaryDataLoader.stockSummariesByAccountIdsAndSummaryType.load(stockSummary.accountId)
+    const amounts = await Promise.all(totalStocks.map((stock: StockSummary) => this.resolveCurrentAmount(stock)))
     return amounts.reduce((acc, currentAmount) => acc + currentAmount, 0)
   }
 

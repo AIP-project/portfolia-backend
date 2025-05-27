@@ -4,7 +4,7 @@ import { StockPriceHistoryService } from "./stock-price-history.service"
 import { StockPriceHistory } from "./entities"
 
 @Injectable({ scope: Scope.REQUEST })
-export class StockPriceDataloader {
+export class StockPriceDataLoader {
   constructor(private readonly stockPriceHistoryService: StockPriceHistoryService) {}
 
   public readonly stockPriceBySymbols = new DataLoader<string, StockPriceHistory | null>(async (symbols: string[]) => {

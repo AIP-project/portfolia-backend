@@ -70,18 +70,26 @@ export class StockPriceHistoryService {
   }
 
   async findBySymbols(symbols: string[]) {
+    if (!symbols || symbols.length === 0) {
+      return []
+    }
+
+    const maxIdsResult = await this.stockPriceHistoryRepository
+      .createQueryBuilder("s")
+      .select("MAX(s.id)", "max_id")
+      .where("s.symbol IN (:...symbols)", { symbols })
+      .groupBy("s.symbol")
+      .getRawMany()
+
+    if (maxIdsResult.length === 0) {
+      return []
+    }
+
+    const latestIds = maxIdsResult.map((result) => result.max_id)
+
     return this.stockPriceHistoryRepository
       .createQueryBuilder("sph")
-      .where("sph.symbol IN (:...symbols)", { symbols })
-      .andWhere((qb) => {
-        const subQuery = qb
-          .subQuery()
-          .select("MAX(s.id)")
-          .from(StockPriceHistory, "s")
-          .where("s.symbol = sph.symbol")
-          .getQuery()
-        return "sph.id = " + subQuery
-      })
+      .where("sph.id IN (:...latestIds)", { latestIds })
       .getMany()
   }
 }

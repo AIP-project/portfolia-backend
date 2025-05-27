@@ -3,6 +3,7 @@ import { Field, Float, ObjectType } from "@nestjs/graphql"
 
 @ObjectType()
 @Entity()
+@Index(['symbol', 'id'])
 export class CoinPriceHistory {
   @Field({ description: "코인 가격 이력 ID" })
   @PrimaryGeneratedColumn()

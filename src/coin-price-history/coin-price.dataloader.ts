@@ -4,7 +4,7 @@ import { CoinPriceHistory } from "./entities"
 import { CoinPriceHistoryService } from "./coin-price-history.service"
 
 @Injectable({ scope: Scope.REQUEST })
-export class CoinPriceDataloader {
+export class CoinPriceDataLoader {
   constructor(private readonly coinPriceHistoryService: CoinPriceHistoryService) {}
 
   public readonly coinPriceBySymbols = new DataLoader<string, CoinPriceHistory | null>(async (symbols: string[]) => {
