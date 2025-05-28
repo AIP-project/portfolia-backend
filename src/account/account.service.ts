@@ -486,7 +486,12 @@ export class AccountService {
 
     for (const summary of etcSummary) {
       const accountName = (await summary.account).nickName
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
+
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const amountInDefaultCurrency = (summary.currentPrice || summary.purchasePrice) * crossRate
 
@@ -501,7 +506,11 @@ export class AccountService {
 
     for (const summary of liabilitiesSummary) {
       const accountName = (await summary.account).nickName
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const amountInDefaultCurrency = (summary.remainingAmount || summary.amount) * crossRate
 
@@ -516,7 +525,11 @@ export class AccountService {
 
     for (const summary of bankSummary) {
       const accountName = (await summary.account).nickName
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const amountInDefaultCurrency = summary.balance * crossRate
 
@@ -564,30 +577,51 @@ export class AccountService {
 
     const exchangeRate = exchangeRateOne.exchangeRates
 
-    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
+    const defaultCurrencyRate = exchangeRate[jwtPayload.currency]
+    console.log(defaultCurrencyRate)
 
     const totalBank = bankSummary.reduce((acc, summary) => {
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, summary.balance * crossRate)
     }, 0)
     const totalStock = stockSummary.reduce((acc, summary) => {
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, summary.amount * crossRate)
     }, 0)
     const totalCoin = coinSummary.reduce((acc, summary) => {
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, summary.amount * crossRate)
     }, 0)
     const totalEtc = etcSummary.reduce((acc, summary) => {
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, (summary.currentPrice || summary.purchasePrice) * crossRate)
     }, 0)
     const totalLiabilities = liabilitiesSummary.reduce((acc, summary) => {
-      const summaryCurrencyRate = exchangeRate[summary.currency]
+      let summaryCurrencyRate: number
+      if (summary.currency)
+        summaryCurrencyRate = exchangeRate[summary.currency]
+      else
+        summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, (summary.remainingAmount || summary.amount) * crossRate)
     }, 0)

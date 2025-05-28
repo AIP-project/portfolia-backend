@@ -30,7 +30,8 @@ export const graphqlLoggingMiddleware: IMiddlewareFunction = async (resolve, roo
     const result = await resolve(root, args, context, info)
     const end = performance.now()
     const duration = end - start
-    logger.log(`[${pathString}] - 완료 ✨ | 소요 시간: ${duration.toFixed(3)}ms`)
+    if (duration > 500)
+      logger.log(`[${pathString}] - 완료 ✨ | 소요 시간: ${duration.toFixed(3)}ms`)
     return result
   } catch (error) {
     const end = performance.now()
