@@ -7,7 +7,7 @@ import { ConfigService } from "@nestjs/config"
 import { ExchangeRate } from "./entities/exchange-rate.entity"
 import { CoinSummary } from "../coin-summary/entities"
 import { Account } from "../account/entities/account.entity"
-import { ExternalServiceException, InterfaceConfig } from "../common"
+import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
 import { firstValueFrom } from "rxjs"
 import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
@@ -26,6 +26,11 @@ export class ExchangeService {
   ) {}
 
   async updateExchange() {
+    const nestConfig = this.configService.get<NestConfig>("nest")!
+    if (nestConfig.environment === "local") {
+      return
+    }
+
     const bankCurrencies = await this.exchangeRateRepository.manager
       .createQueryBuilder(BankSummary, "bankSummary")
       .select("bankSummary.currency")

@@ -7,7 +7,7 @@ import { CoinPriceHistory } from "./entities"
 import { firstValueFrom } from "rxjs"
 import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
-import { ExternalServiceException, InterfaceConfig } from "../common"
+import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
 import { CoinSummary } from "../coin-summary/entities"
 
 @Injectable()
@@ -22,6 +22,11 @@ export class CoinPriceHistoryService {
   ) {}
 
   async updateCoinPrice() {
+    const nestConfig = this.configService.get<NestConfig>("nest")!
+    if (nestConfig.environment === "local") {
+      return
+    }
+
     const distinctCoinSymbols = await this.coinSummaryRepository
       .createQueryBuilder("coinSummary")
       .select("coinSummary.symbol", "symbol")

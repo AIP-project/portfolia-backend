@@ -8,7 +8,7 @@ import { StockPriceHistory } from "./entities"
 import { firstValueFrom } from "rxjs"
 import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
-import { ExternalServiceException, InterfaceConfig } from "../common"
+import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
 
 @Injectable()
 export class StockPriceHistoryService {
@@ -22,6 +22,11 @@ export class StockPriceHistoryService {
   ) {}
 
   async updateStockPrice() {
+    const nestConfig = this.configService.get<NestConfig>("nest")!
+    if (nestConfig.environment === "local") {
+      return
+    }
+
     const distinctStockGroups = await this.stockSummaryRepository
       .createQueryBuilder("stockSummary")
       .select("stockSummary.symbol", "symbol")

@@ -75,8 +75,9 @@ export class StockTransactionService {
     })
 
     if (existStockSummary) {
-      cleanInput.name = existStockSummary.name
+      cleanInput.name = stockTransactionInput.name
       cleanInput.currency = existStockSummary.currency
+      existStockSummary.name = stockTransactionInput.name
     }
 
     const existSummary = {
@@ -154,9 +155,6 @@ export class StockTransactionService {
         sections: [
           {
             type: "PRODUCT",
-            option: {
-              addIntegratedSearchResult: true,
-            },
           },
         ],
       }
@@ -199,7 +197,6 @@ export class StockTransactionService {
                       isDelete: false,
                     },
                     {
-                      name: stockInfo.name,
                       stockCompanyCode: stockInfo.code,
                       currency: stockInfo.currency,
                       market: stockInfo.market.code,
@@ -215,7 +212,6 @@ export class StockTransactionService {
                       id: result.id,
                     },
                     {
-                      name: stockInfo.name,
                       currency: stockInfo.currency,
                     },
                   )
