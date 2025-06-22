@@ -1,12 +1,10 @@
 import { Args, Float, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { StockSummaryService } from "./stock-summary.service"
-import { StockSummary } from "./entities"
 import { CurrencyType, JwtPayload, SummaryType, UserDecoded } from "../common"
-import { StockSummaries, StockSummariesArgs, UpdateStockSummaryInput } from "./dto"
+import { StockSummaries, StockSummariesArgs, StockSummary, UpdateStockSummaryInput } from "./dto"
 import { ExchangeDataLoader } from "../exchange/exchange.dataloader"
 import { StockPriceDataLoader } from "../stock-price-history/stock-price.dataloader"
 import { StockSummaryDataLoader } from "./stock-summary.dataloader"
-import { performance } from "perf_hooks"
 
 @Resolver(() => StockSummary)
 export class StockSummaryResolver {

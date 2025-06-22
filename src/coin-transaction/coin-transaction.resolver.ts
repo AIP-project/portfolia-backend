@@ -1,7 +1,12 @@
 import { Args, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { JwtPayload, parseISOString, UserDecoded } from "../common"
-import { CoinTransactions, CoinTransactionsArgs, CreateCoinTransactionInput, UpdateCoinTransactionInput } from "./dto"
-import { CoinTransaction } from "./entities"
+import {
+  CoinTransaction,
+  CoinTransactions,
+  CoinTransactionsArgs,
+  CreateCoinTransactionInput,
+  UpdateCoinTransactionInput,
+} from "./dto"
 import { CoinTransactionService } from "./coin-transaction.service"
 
 @Resolver(() => CoinTransaction)

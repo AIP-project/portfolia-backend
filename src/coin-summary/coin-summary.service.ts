@@ -7,61 +7,54 @@ import {
   SummaryType,
   UserRole,
   ValidationException,
+  transformDecimalFields,
 } from "../common"
-import { CoinSummariesArgs, UpdateCoinSummaryInput } from "./dto"
-import { FindOptionsWhere, Repository } from "typeorm"
-import { InjectRepository } from "@nestjs/typeorm"
-import { Account } from "../account/entities/account.entity"
-import { CoinSummary } from "./entities"
-import { CoinTransaction } from "../coin-transaction/entities"
+import { CoinSummariesArgs, CoinSummary, UpdateCoinSummaryInput } from "./dto"
+import { PrismaService } from "../common/prisma"
 
 @Injectable()
 export class CoinSummaryService {
-  constructor(
-    @InjectRepository(CoinSummary) private readonly coinSummaryRepository: Repository<CoinSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async coinSummaries(jwtPayload: JwtPayload, coinSummariesArgs: CoinSummariesArgs) {
     const { page = 1, take = 10, sortBy, accountId } = coinSummariesArgs
     const skip = (page - 1) * take
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const whereConditions: FindOptionsWhere<CoinSummary> = {
+    const whereConditions = {
       accountId: accountId,
       type: SummaryType.SUMMARY,
       isDelete: false,
     }
 
     // Order by 설정
-    const order =
+    const orderBy =
       sortBy.length > 0
-        ? sortBy.reduce(
-            (acc, { field, direction }) => ({
-              ...acc,
-              [field]: direction ? "ASC" : "DESC",
-            }),
-            {},
-          )
-        : { createdAt: "ASC" } // 기본 정렬
+        ? sortBy.map(({ field, direction }) => ({
+            [field]: direction ? "asc" : "desc",
+          }))
+        : [{ createdAt: "asc" }] // 기본 정렬
 
-    const [coinSummaries, total] = await this.coinSummaryRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [coinSummaries, total] = await Promise.all([
+      this.prisma.coinSummary.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.coinSummary.count({ where: whereConditions }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
     return {
-      edges: coinSummaries,
+      edges: coinSummaries.map((summary) => transformDecimalFields(summary, ["quantity", "amount"])),
       pageInfo: {
         total,
         page,
@@ -79,12 +72,12 @@ export class CoinSummaryService {
   }
 
   private async cleanUpdateCoinSummary(jwtPayload: JwtPayload, updateCoinSummaryInput: UpdateCoinSummaryInput) {
-    const existingCoinSummary = await this.coinSummaryRepository.findOne({
+    const existingCoinSummary = await this.prisma.coinSummary.findUnique({
       where: { id: updateCoinSummaryInput.id },
     })
     if (!existingCoinSummary) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_COIN_SUMMARY)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: existingCoinSummary.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -113,35 +106,40 @@ export class CoinSummaryService {
     return { ...cleanInput, existingCoinSummary }
   }
 
-  private async txUpdateCoinSummary(cleanInput: UpdateCoinSummaryInput & { existingCoinSummary: CoinSummary }) {
-    return this.coinSummaryRepository.manager.transaction(async (manager) => {
+  private async txUpdateCoinSummary(cleanInput: UpdateCoinSummaryInput & { existingCoinSummary: any }) {
+    return this.prisma.$transaction(async (prisma) => {
       const { existingCoinSummary, ...input } = cleanInput
 
-      const updatedCoinSummary = manager.merge(CoinSummary, existingCoinSummary, input)
-
-      return await manager.save(CoinSummary, updatedCoinSummary)
+      const updated = await prisma.coinSummary.update({
+        where: { id: existingCoinSummary.id },
+        data: input,
+      })
+      return transformDecimalFields(updated, ["quantity", "amount"])
     })
   }
 
-  private async txDeleteCoinSummary(cleanInput: UpdateCoinSummaryInput & { existingCoinSummary: CoinSummary }) {
-    await this.coinSummaryRepository.manager.transaction(async (manager) => {
+  private async txDeleteCoinSummary(cleanInput: UpdateCoinSummaryInput & { existingCoinSummary: any }) {
+    await this.prisma.$transaction(async (prisma) => {
       const { existingCoinSummary, ...input } = cleanInput
-      await manager.update(
-        CoinTransaction,
-        {
+      await prisma.coinTransaction.updateMany({
+        where: {
           isDelete: false,
           symbol: existingCoinSummary.symbol,
         },
-        { isDelete: input.isDelete },
-      )
-      await manager.update(CoinSummary, { isDelete: false, id: existingCoinSummary.id }, { isDelete: input.isDelete })
+        data: { isDelete: input.isDelete },
+      })
+      await prisma.coinSummary.update({
+        where: { id: existingCoinSummary.id },
+        data: { isDelete: input.isDelete },
+      })
     })
     return null
   }
 
-  async totalCoins(coinSummary: CoinSummary) {
-    return this.coinSummaryRepository.find({
+  async totalCoins(coinSummary: CoinSummary): Promise<CoinSummary[]> {
+    const coins = await this.prisma.coinSummary.findMany({
       where: { accountId: coinSummary.accountId, type: SummaryType.SUMMARY, isDelete: false },
     })
+    return coins.map((coin) => transformDecimalFields(coin, ["quantity", "amount"]))
   }
 }

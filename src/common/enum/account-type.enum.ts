@@ -1,11 +1,11 @@
 import { registerEnumType } from "@nestjs/graphql"
 
 export enum AccountType {
-  BANK = "bank",
-  STOCK = "stock",
-  COIN = "coin",
-  ETC = "etc",
-  LIABILITIES = "liabilities",
+  BANK = "BANK",
+  STOCK = "STOCK",
+  COIN = "COIN",
+  ETC = "ETC",
+  LIABILITIES = "LIABILITIES",
 }
 
 registerEnumType(AccountType, {

@@ -1,6 +1,6 @@
 import { ObjectType } from "@nestjs/graphql"
 import { Paginated } from "../../common"
-import { StockTransaction } from "../entities/stock-transaction.entity"
+import { StockTransaction } from "./stock-transaction.model"
 
 @ObjectType()
 export class StockTransactions extends Paginated(StockTransaction) {}

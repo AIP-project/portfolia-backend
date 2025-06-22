@@ -1,5 +1,4 @@
 import { Module } from "@nestjs/common"
-import { TypeOrmModule } from "@nestjs/typeorm"
 import { APP_GUARD } from "@nestjs/core"
 import { UserModule } from "./user/user.module"
 import { AccountModule } from "./account/account.module"
@@ -7,7 +6,7 @@ import { BankTransactionModule } from "./bank-transaction/bank-transaction.modul
 import { CoinTransactionModule } from "./coin-transaction/coin-transaction.module"
 import { EtcTransactionModule } from "./etc-transaction/etc-transaction.module"
 import { StockTransactionModule } from "./stock-transaction/stock-transaction.module"
-import { AuthGuard, AuthModule, DatabaseConfig, LoggingPlugin, RedisConfig, RolesGuard, TypeOrmLogger } from "./common"
+import { AuthGuard, AuthModule, LoggingPlugin, RedisConfig, RolesGuard } from "./common"
 import { ConfigModule, ConfigService } from "@nestjs/config"
 import configuration from "./common/config/config"
 import { GraphQLModule } from "@nestjs/graphql"
@@ -45,27 +44,6 @@ import { GqlConfigService } from "./common/config/gql-config.service"
       useFactory: (configService: ConfigService) => createWinstonConfig(configService),
     }),
 
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => {
-        const databaseConfig = configService.get<DatabaseConfig>("database")!
-        return {
-          type: "mysql",
-          host: databaseConfig.host.includes("/cloudsql/") ? undefined : databaseConfig.host,
-          port: databaseConfig.port,
-          username: databaseConfig.username,
-          password: databaseConfig.password,
-          database: databaseConfig.name,
-          synchronize: databaseConfig.synchronize,
-          entities: [__dirname + "/**/*.entity{.ts,.js}"],
-          logger: new TypeOrmLogger(configService),
-          logging: databaseConfig.synchronize,
-          timezone: "Z",
-          socketPath: databaseConfig.host.includes("/cloudsql/") ? databaseConfig.host : undefined,
-        }
-      },
-    }),
 
     RedisModule.forRootAsync({
       inject: [ConfigService],

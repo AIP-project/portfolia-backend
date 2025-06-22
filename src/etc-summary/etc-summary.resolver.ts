@@ -1,7 +1,7 @@
 import { Args, Mutation, Resolver } from "@nestjs/graphql"
 import { EtcSummaryService } from "./etc-summary.service"
 import { JwtPayload, UserDecoded } from "../common"
-import { EtcSummary } from "./entities"
+import { EtcSummary } from "./dto/etc-summary.model"
 import { UpdateEtcSummaryInput } from "./dto"
 
 @Resolver(() => EtcSummary)

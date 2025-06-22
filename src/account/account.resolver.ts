@@ -1,15 +1,13 @@
 import { Args, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { JwtPayload, UserDecoded } from "../common"
 import { AccountService } from "./account.service"
-import { Account } from "./entities/account.entity"
-import { Accounts, AccountsArgs, Allocation, CreateAccountInput, Dashboard, UpdateAccountInput } from "./dto"
-import { BankSummary } from "../bank-summary/entities"
-import { EtcSummary } from "../etc-summary/entities"
-import { LiabilitiesSummary } from "../liabilities-summary/entities"
-import { StockSummary } from "../stock-summary/entities"
-import { CoinSummary } from "../coin-summary/entities"
+import { Account, Accounts, AccountsArgs, Allocation, CreateAccountInput, Dashboard, UpdateAccountInput } from "./dto"
 import { StockSummaryDataLoader } from "../stock-summary/stock-summary.dataloader"
-
+import { BankSummary } from "../bank-summary/dto"
+import { CoinSummary } from "../coin-summary/dto"
+import { StockSummary } from "../stock-summary/dto"
+import { EtcSummary } from "../etc-summary/dto"
+import { LiabilitiesSummary } from "../liabilities-summary/dto"
 @Resolver(() => Account)
 export class AccountResolver {
   constructor(

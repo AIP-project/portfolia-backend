@@ -1,7 +1,7 @@
 import { Injectable, Scope } from "@nestjs/common"
 import * as DataLoader from "dataloader"
 import { StockPriceHistoryService } from "./stock-price-history.service"
-import { StockPriceHistory } from "./entities"
+import { StockPriceHistory } from "./dto/stock-price-history.model"
 
 @Injectable({ scope: Scope.REQUEST })
 export class StockPriceDataLoader {

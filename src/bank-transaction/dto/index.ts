@@ -1,5 +1,6 @@
 export * from "./bank-transaction.input"
 export * from "./bank-transactions.args"
 export * from "./bank-transactions.model"
+export * from "./bank-transaction.model"
 export * from "./create-bank-transaction.input"
 export * from "./update-bank-transaction.input"

@@ -15,21 +15,14 @@ import {
   CreateBankTransactionInput,
   UpdateBankTransactionInput,
 } from "./dto"
-import { InjectRepository } from "@nestjs/typeorm"
-import { FindOptionsWhere, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from "typeorm"
-import { Account } from "../account/entities/account.entity"
-import { BankTransaction } from "./entities"
-import { BankSummary } from "../bank-summary/entities"
+import { PrismaService } from "../common/prisma"
+import { Decimal } from "@prisma/client/runtime/library"
 
 @Injectable()
 export class BankTransactionService {
   private readonly logger = new Logger(BankTransactionService.name)
 
-  constructor(
-    @InjectRepository(BankTransaction) private readonly bankTransactionRepository: Repository<BankTransaction>,
-    @InjectRepository(BankSummary) private readonly bankSummaryRepository: Repository<BankSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private async commonCheckBankTransaction(jwtPayload: JwtPayload, bankTransactionInput: BankTransactionInput) {
     const cleanInput = new BankTransactionInput()
@@ -38,7 +31,7 @@ export class BankTransactionService {
 
     if (bankTransactionInput.transactionDate) parseISOString(bankTransactionInput.transactionDate)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: bankTransactionInput.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -46,7 +39,7 @@ export class BankTransactionService {
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const existSummary = await this.bankSummaryRepository.findOne({
+    const existSummary = await this.prisma.bankSummary.findUnique({
       where: { accountId: bankTransactionInput.accountId },
     })
 
@@ -64,30 +57,31 @@ export class BankTransactionService {
     const cleanInput = await this.commonCheckBankTransaction(jwtPayload, createBankTransactionInput)
 
     if (cleanInput.type === TransactionType.DEPOSIT) {
-      cleanInput.existSummary.totalDepositAmount += cleanInput.amount
-      cleanInput.existSummary.balance += cleanInput.amount
+      cleanInput.existSummary.totalDepositAmount = new Decimal(Number(cleanInput.existSummary.totalDepositAmount) + Number(cleanInput.amount))
+      cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) + Number(cleanInput.amount))
     } else {
-      cleanInput.existSummary.totalWithdrawalAmount += cleanInput.amount
-      cleanInput.existSummary.balance -= cleanInput.amount
+      cleanInput.existSummary.totalWithdrawalAmount = new Decimal(Number(cleanInput.existSummary.totalWithdrawalAmount) + Number(cleanInput.amount))
+      cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) - Number(cleanInput.amount))
     }
 
     return { ...createBankTransactionInput, ...cleanInput }
   }
 
-  private async txCreateBankTransaction(cleanInput: CreateBankTransactionInput & { existSummary: BankSummary }) {
-    return this.bankTransactionRepository.manager.transaction(async (manager) => {
+  private async txCreateBankTransaction(cleanInput: CreateBankTransactionInput & { existSummary: any }) {
+    return this.prisma.$transaction(async (prisma) => {
       const { existSummary, ...input } = cleanInput
-      const bankTransaction = await manager.save(BankTransaction, input)
+      const bankTransaction = await prisma.bankTransaction.create({ data: input })
 
-      await manager.update(
-        BankSummary,
-        {
+      await prisma.bankSummary.update({
+        where: {
           accountId: bankTransaction.accountId,
         },
-        {
-          ...existSummary,
+        data: {
+          totalDepositAmount: existSummary.totalDepositAmount,
+          totalWithdrawalAmount: existSummary.totalWithdrawalAmount,
+          balance: existSummary.balance,
         },
-      )
+      })
 
       return bankTransaction
     })
@@ -107,42 +101,49 @@ export class BankTransactionService {
     } = bankTransactionsArgs
     const skip = (page - 1) * take
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const whereConditions: FindOptionsWhere<BankTransaction> = {
+    const whereConditions: any = {
       isDelete: false,
       accountId,
     }
 
-    if (name) whereConditions.name = ILike(`%${name}%`)
-    if (note) whereConditions.note = ILike(`%${note}%`)
+    if (name) whereConditions.name = { contains: name }
+    if (note) whereConditions.note = { contains: note }
     if (type) whereConditions.type = type
-    if (fromTransactionDate) whereConditions.transactionDate = MoreThanOrEqual(new Date(fromTransactionDate))
-    if (toTransactionDate) whereConditions.transactionDate = LessThanOrEqual(new Date(toTransactionDate))
+    if (fromTransactionDate && toTransactionDate) {
+      whereConditions.transactionDate = {
+        gte: new Date(fromTransactionDate),
+        lte: new Date(toTransactionDate),
+      }
+    } else if (fromTransactionDate) {
+      whereConditions.transactionDate = { gte: new Date(fromTransactionDate) }
+    } else if (toTransactionDate) {
+      whereConditions.transactionDate = { lte: new Date(toTransactionDate) }
+    }
 
     // Order by 설정
-    const order =
+    const orderBy =
       sortBy.length > 0
-        ? sortBy.reduce(
-            (acc, { field, direction }) => ({
-              ...acc,
-              [field]: direction ? "ASC" : "DESC",
-            }),
-            {},
-          )
-        : { createdAt: "ASC" } // 기본 정렬
+        ? sortBy.map(({ field, direction }) => ({
+            [field]: direction ? "asc" : "desc",
+          }))
+        : [{ createdAt: "asc" }] // 기본 정렬
 
-    const [bankTransactions, total] = await this.bankTransactionRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [bankTransactions, total] = await Promise.all([
+      this.prisma.bankTransaction.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.bankTransaction.count({ where: whereConditions }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
@@ -159,10 +160,10 @@ export class BankTransactionService {
   }
 
   async bankTransaction(jwtPayload: JwtPayload, id: number) {
-    const bankTransaction = await this.bankTransactionRepository.findOne({ where: { id: id, isDelete: false } })
+    const bankTransaction = await this.prisma.bankTransaction.findFirst({ where: { id: id, isDelete: false } })
     if (!bankTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_BANK_TRANSACTION)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: bankTransaction.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -181,7 +182,7 @@ export class BankTransactionService {
     jwtPayload: JwtPayload,
     updateBankTransactionInput: UpdateBankTransactionInput,
   ) {
-    const existingBankTransaction = await this.bankTransactionRepository.findOne({
+    const existingBankTransaction = await this.prisma.bankTransaction.findFirst({
       where: { id: updateBankTransactionInput.id, isDelete: false },
     })
     if (!existingBankTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_BANK_TRANSACTION)
@@ -193,19 +194,19 @@ export class BankTransactionService {
 
     if (cleanInput.isDelete) {
       if (existingBankTransaction.type === TransactionType.DEPOSIT) {
-        cleanInput.existSummary.totalDepositAmount -= existingBankTransaction.amount
-        cleanInput.existSummary.balance -= existingBankTransaction.amount
+        cleanInput.existSummary.totalDepositAmount = new Decimal(Number(cleanInput.existSummary.totalDepositAmount) - Number(existingBankTransaction.amount))
+        cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) - Number(existingBankTransaction.amount))
       } else {
-        cleanInput.existSummary.totalWithdrawalAmount -= existingBankTransaction.amount
-        cleanInput.existSummary.balance += existingBankTransaction.amount
+        cleanInput.existSummary.totalWithdrawalAmount = new Decimal(Number(cleanInput.existSummary.totalWithdrawalAmount) - Number(existingBankTransaction.amount))
+        cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) + Number(existingBankTransaction.amount))
       }
     } else {
       if (cleanInput.type === TransactionType.DEPOSIT) {
-        cleanInput.existSummary.totalDepositAmount += cleanInput.amount - existingBankTransaction.amount
-        cleanInput.existSummary.balance += cleanInput.amount - existingBankTransaction.amount
+        cleanInput.existSummary.totalDepositAmount = new Decimal(Number(cleanInput.existSummary.totalDepositAmount) + Number(cleanInput.amount) - Number(existingBankTransaction.amount))
+        cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) + Number(cleanInput.amount) - Number(existingBankTransaction.amount))
       } else {
-        cleanInput.existSummary.totalWithdrawalAmount += cleanInput.amount - existingBankTransaction.amount
-        cleanInput.existSummary.balance -= cleanInput.amount - existingBankTransaction.amount
+        cleanInput.existSummary.totalWithdrawalAmount = new Decimal(Number(cleanInput.existSummary.totalWithdrawalAmount) + Number(cleanInput.amount) - Number(existingBankTransaction.amount))
+        cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) - Number(cleanInput.amount) + Number(existingBankTransaction.amount))
       }
     }
 
@@ -213,26 +214,28 @@ export class BankTransactionService {
   }
 
   private async txUpdateBankTransaction(
-    cleanInput: UpdateBankTransactionInput & { existingBankTransaction: BankTransaction } & {
-      existSummary: BankSummary
+    cleanInput: UpdateBankTransactionInput & { existingBankTransaction: any } & {
+      existSummary: any
     },
   ) {
-    return this.bankTransactionRepository.manager.transaction(async (manager) => {
+    return this.prisma.$transaction(async (prisma) => {
       const { existingBankTransaction, existSummary, ...input } = cleanInput
 
-      const updatedBankTransaction = manager.merge(BankTransaction, existingBankTransaction, input)
+      const bankTransaction = await prisma.bankTransaction.update({
+        where: { id: existingBankTransaction.id },
+        data: input,
+      })
 
-      const bankTransaction = await manager.save(BankTransaction, updatedBankTransaction)
-
-      await manager.update(
-        BankSummary,
-        {
+      await prisma.bankSummary.update({
+        where: {
           accountId: bankTransaction.accountId,
         },
-        {
-          ...existSummary,
+        data: {
+          totalDepositAmount: existSummary.totalDepositAmount,
+          totalWithdrawalAmount: existSummary.totalWithdrawalAmount,
+          balance: existSummary.balance,
         },
-      )
+      })
       return bankTransaction
     })
   }

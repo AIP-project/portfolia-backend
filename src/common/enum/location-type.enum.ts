@@ -1,10 +1,10 @@
 import { registerEnumType } from "@nestjs/graphql"
 
 export enum LocationType {
-  KR = "korea",
-  US = "usa",
-  SG = "singapore",
-  ETC = "etc",
+  KR = "KR",
+  US = "US",
+  SG = "SG",
+  ETC = "ETC",
 }
 
 registerEnumType(LocationType, {

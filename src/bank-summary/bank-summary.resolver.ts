@@ -1,8 +1,7 @@
 import { Args, Mutation, Resolver } from "@nestjs/graphql"
 import { BankSummaryService } from "./bank-summary.service"
 import { JwtPayload, UserDecoded } from "../common"
-import { BankSummary } from "./entities"
-import { UpdateBankSummaryInput } from "./dto"
+import { BankSummary, UpdateBankSummaryInput } from "./dto"
 
 @Resolver(() => BankSummary)
 export class BankSummaryResolver {

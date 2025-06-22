@@ -1,17 +1,11 @@
 import { Injectable } from "@nestjs/common"
 import { UpdateEtcSummaryInput } from "./dto"
 import { AccountType, ErrorMessage, ForbiddenException, JwtPayload, UserRole, ValidationException } from "../common"
-import { EtcSummary } from "./entities"
-import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
-import { Account } from "../account/entities/account.entity"
+import { PrismaService } from "../common/prisma"
 
 @Injectable()
 export class EtcSummaryService {
-  constructor(
-    @InjectRepository(EtcSummary) private readonly etcSummaryRepository: Repository<EtcSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async updateEtcSummary(jwtPayload: JwtPayload, updateEtcSummaryInput: UpdateEtcSummaryInput) {
     const cleanInput = await this.cleanUpdateEtcSummary(jwtPayload, updateEtcSummaryInput)
@@ -19,12 +13,12 @@ export class EtcSummaryService {
   }
 
   private async cleanUpdateEtcSummary(jwtPayload: JwtPayload, updateEtcSummaryInput: UpdateEtcSummaryInput) {
-    const existingEtcSummary = await this.etcSummaryRepository.findOne({
+    const existingEtcSummary = await this.prisma.etcSummary.findUnique({
       where: { id: updateEtcSummaryInput.id },
     })
     if (!existingEtcSummary) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ETC_SUMMARY)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: existingEtcSummary.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -35,13 +29,14 @@ export class EtcSummaryService {
     return { ...updateEtcSummaryInput, existingEtcSummary }
   }
 
-  private async txUpdateEtcSummary(cleanInput: UpdateEtcSummaryInput & { existingEtcSummary: EtcSummary }) {
-    return this.etcSummaryRepository.manager.transaction(async (manager) => {
+  private async txUpdateEtcSummary(cleanInput: UpdateEtcSummaryInput & { existingEtcSummary: any }) {
+    return this.prisma.$transaction(async (prisma) => {
       const { existingEtcSummary, ...input } = cleanInput
 
-      const updatedEtcSummary = manager.merge(EtcSummary, existingEtcSummary, input)
-
-      return await manager.save(EtcSummary, updatedEtcSummary)
+      return await prisma.etcSummary.update({
+        where: { id: existingEtcSummary.id },
+        data: input,
+      })
     })
   }
 }

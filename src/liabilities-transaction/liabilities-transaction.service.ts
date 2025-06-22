@@ -1,7 +1,4 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { FindOptionsWhere, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from "typeorm"
-import { Account } from "../account/entities/account.entity"
 import {
   AccountType,
   ErrorMessage,
@@ -17,19 +14,14 @@ import {
   LiabilitiesTransactionsArgs,
   UpdateLiabilitiesTransactionInput,
 } from "./dto"
-import { LiabilitiesTransaction } from "./entities"
-import { LiabilitiesSummary } from "../liabilities-summary/entities"
+import { PrismaService } from "../common/prisma"
+import { Decimal } from "@prisma/client/runtime/library"
 
 @Injectable()
 export class LiabilitiesTransactionService {
   private readonly logger = new Logger(LiabilitiesTransactionService.name)
 
-  constructor(
-    @InjectRepository(LiabilitiesTransaction)
-    private readonly liabilitiesTransactionRepository: Repository<LiabilitiesTransaction>,
-    @InjectRepository(LiabilitiesSummary) private readonly liabilitiesSummaryRepository: Repository<LiabilitiesSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private async commonCheckLiabilitiesTransaction(
     jwtPayload: JwtPayload,
@@ -45,7 +37,7 @@ export class LiabilitiesTransactionService {
     if (liabilitiesTransactionInput.transactionDate) parseISOString(liabilitiesTransactionInput.transactionDate)
 
     if (liabilitiesTransactionInput.accountId) {
-      const existingAccount = await this.accountRepository.findOne({
+      const existingAccount = await this.prisma.account.findUnique({
         where: { id: liabilitiesTransactionInput.accountId },
       })
       if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -55,7 +47,7 @@ export class LiabilitiesTransactionService {
         throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
     }
 
-    const existSummary = await this.liabilitiesSummaryRepository.findOne({
+    const existSummary = await this.prisma.liabilitiesSummary.findUnique({
       where: { accountId: liabilitiesTransactionInput.accountId },
     })
 
@@ -78,24 +70,31 @@ export class LiabilitiesTransactionService {
   ) {
     const cleanInput = await this.commonCheckLiabilitiesTransaction(jwtPayload, createLiabilitiesTransactionInput)
 
-    cleanInput.existSummary.count += 1
-    cleanInput.existSummary.amount += cleanInput.amount
-    cleanInput.existSummary.remainingAmount += cleanInput.remainingAmount
+    cleanInput.existSummary.count = Number(cleanInput.existSummary.count) + 1
+    cleanInput.existSummary.amount = new Decimal(Number(cleanInput.existSummary.amount) + Number(cleanInput.amount))
+    cleanInput.existSummary.remainingAmount = new Decimal(Number(cleanInput.existSummary.remainingAmount) + Number(cleanInput.remainingAmount))
 
     return { ...createLiabilitiesTransactionInput, ...cleanInput }
   }
 
   private async txCreateLiabilitiesTransaction(
     cleanInput: CreateLiabilitiesTransactionInput & {
-      existSummary: LiabilitiesSummary
+      existSummary: any
     },
   ) {
-    return this.liabilitiesTransactionRepository.manager.transaction(async (manager) => {
+    return this.prisma.$transaction(async (prisma) => {
       const { existSummary, ...input } = cleanInput
 
-      const liabilitiesTransaction = await manager.save(LiabilitiesTransaction, input)
+      const liabilitiesTransaction = await prisma.liabilitiesTransaction.create({ data: input })
 
-      await manager.save(LiabilitiesSummary, existSummary)
+      await prisma.liabilitiesSummary.update({
+        where: { id: existSummary.id },
+        data: {
+          count: existSummary.count,
+          amount: existSummary.amount,
+          remainingAmount: existSummary.remainingAmount,
+        },
+      })
 
       return liabilitiesTransaction
     })
@@ -114,41 +113,48 @@ export class LiabilitiesTransactionService {
     } = liabilitiesTransactionsArgs
     const skip = (page - 1) * take
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const whereConditions: FindOptionsWhere<LiabilitiesTransaction> = {
+    const whereConditions: any = {
       isDelete: false,
       accountId,
     }
 
-    if (name) whereConditions.name = ILike(`%${name}%`)
-    if (note) whereConditions.note = ILike(`%${note}%`)
-    if (fromTransactionDate) whereConditions.transactionDate = MoreThanOrEqual(new Date(fromTransactionDate))
-    if (toTransactionDate) whereConditions.transactionDate = LessThanOrEqual(new Date(toTransactionDate))
+    if (name) whereConditions.name = { contains: name }
+    if (note) whereConditions.note = { contains: note }
+    if (fromTransactionDate && toTransactionDate) {
+      whereConditions.transactionDate = {
+        gte: new Date(fromTransactionDate),
+        lte: new Date(toTransactionDate),
+      }
+    } else if (fromTransactionDate) {
+      whereConditions.transactionDate = { gte: new Date(fromTransactionDate) }
+    } else if (toTransactionDate) {
+      whereConditions.transactionDate = { lte: new Date(toTransactionDate) }
+    }
 
     // Order by 설정
-    const order =
+    const orderBy =
       sortBy.length > 0
-        ? sortBy.reduce(
-            (acc, { field, direction }) => ({
-              ...acc,
-              [field]: direction ? "ASC" : "DESC",
-            }),
-            {},
-          )
-        : { createdAt: "ASC" } // 기본 정렬
+        ? sortBy.map(({ field, direction }) => ({
+            [field]: direction ? "asc" : "desc",
+          }))
+        : [{ createdAt: "asc" }] // 기본 정렬
 
-    const [liabilitiesTransactions, total] = await this.liabilitiesTransactionRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [liabilitiesTransactions, total] = await Promise.all([
+      this.prisma.liabilitiesTransaction.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.liabilitiesTransaction.count({ where: whereConditions }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
@@ -165,12 +171,12 @@ export class LiabilitiesTransactionService {
   }
 
   async liabilitiesTransaction(jwtPayload: JwtPayload, id: number) {
-    const LiabilitiesTransaction = await this.liabilitiesTransactionRepository.findOne({
+    const LiabilitiesTransaction = await this.prisma.liabilitiesTransaction.findFirst({
       where: { id: id, isDelete: false },
     })
     if (!LiabilitiesTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ETC_TRANSACTION)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: LiabilitiesTransaction.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -192,7 +198,7 @@ export class LiabilitiesTransactionService {
     jwtPayload: JwtPayload,
     updateLiabilitiesTransactionInput: UpdateLiabilitiesTransactionInput,
   ) {
-    const existingLiabilitiesTransaction = await this.liabilitiesTransactionRepository.findOne({
+    const existingLiabilitiesTransaction = await this.prisma.liabilitiesTransaction.findFirst({
       where: { id: updateLiabilitiesTransactionInput.id, isDelete: false },
     })
     if (!existingLiabilitiesTransaction)
@@ -204,13 +210,14 @@ export class LiabilitiesTransactionService {
     })
 
     if (cleanInput.isDelete) {
-      cleanInput.existSummary.count -= 1
-      cleanInput.existSummary.amount -= existingLiabilitiesTransaction.amount
-      cleanInput.existSummary.remainingAmount -= existingLiabilitiesTransaction.remainingAmount
+      cleanInput.existSummary.count = Number(cleanInput.existSummary.count) - 1
+      cleanInput.existSummary.amount = new Decimal(Number(cleanInput.existSummary.amount) - Number(existingLiabilitiesTransaction.amount))
+      cleanInput.existSummary.remainingAmount = new Decimal(Number(cleanInput.existSummary.remainingAmount) - Number(existingLiabilitiesTransaction.remainingAmount))
     } else {
-      cleanInput.existSummary.amount += cleanInput.amount - existingLiabilitiesTransaction.amount
-      cleanInput.existSummary.remainingAmount +=
-        cleanInput.remainingAmount - existingLiabilitiesTransaction.remainingAmount
+      cleanInput.existSummary.amount = new Decimal(Number(cleanInput.existSummary.amount) + Number(cleanInput.amount) - Number(existingLiabilitiesTransaction.amount))
+      cleanInput.existSummary.remainingAmount = new Decimal(
+        Number(cleanInput.existSummary.remainingAmount) + Number(cleanInput.remainingAmount) - Number(existingLiabilitiesTransaction.remainingAmount)
+      )
     }
 
     return { ...updateLiabilitiesTransactionInput, ...cleanInput, existingLiabilitiesTransaction }
@@ -218,19 +225,27 @@ export class LiabilitiesTransactionService {
 
   private txUpdateLiabilitiesTransaction(
     cleanInput: UpdateLiabilitiesTransactionInput & {
-      existSummary: LiabilitiesSummary
+      existSummary: any
     } & {
-      existingLiabilitiesTransaction: LiabilitiesTransaction
+      existingLiabilitiesTransaction: any
     },
   ) {
-    return this.liabilitiesTransactionRepository.manager.transaction(async (manager) => {
+    return this.prisma.$transaction(async (prisma) => {
       const { existingLiabilitiesTransaction, existSummary, ...input } = cleanInput
 
-      const updatedLiabilitiesTransaction = manager.merge(LiabilitiesTransaction, existingLiabilitiesTransaction, input)
+      const liabilitiesTransaction = await prisma.liabilitiesTransaction.update({
+        where: { id: existingLiabilitiesTransaction.id },
+        data: input,
+      })
 
-      const liabilitiesTransaction = await manager.save(LiabilitiesTransaction, updatedLiabilitiesTransaction)
-
-      await manager.save(LiabilitiesSummary, existSummary)
+      await prisma.liabilitiesSummary.update({
+        where: { id: existSummary.id },
+        data: {
+          count: existSummary.count,
+          amount: existSummary.amount,
+          remainingAmount: existSummary.remainingAmount,
+        },
+      })
 
       return liabilitiesTransaction
     })

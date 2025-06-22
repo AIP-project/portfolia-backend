@@ -1,7 +1,4 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { FindOptionsWhere, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from "typeorm"
-import { Account } from "../account/entities/account.entity"
 import {
   AccountType,
   ErrorMessage,
@@ -21,22 +18,20 @@ import {
   StockTransactionsArgs,
   UpdateStockTransactionInput,
 } from "./dto"
-import { StockSummary } from "../stock-summary/entities"
-import { StockTransaction } from "./entities"
 import { HttpService } from "@nestjs/axios"
 import { firstValueFrom } from "rxjs"
 import { AxiosError } from "axios"
 import { catchError, map } from "rxjs/operators"
 import { ConfigService } from "@nestjs/config"
+import { PrismaService } from "../common/prisma"
+import { Decimal } from "@prisma/client/runtime/library"
 
 @Injectable()
 export class StockTransactionService {
   private readonly logger = new Logger(StockTransactionService.name)
 
   constructor(
-    @InjectRepository(StockTransaction) private readonly stockTransactionRepository: Repository<StockTransaction>,
-    @InjectRepository(StockSummary) private readonly stockSummaryRepository: Repository<StockSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
+    private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {}
@@ -51,7 +46,7 @@ export class StockTransactionService {
 
     if (stockTransactionInput.transactionDate) parseISOString(stockTransactionInput.transactionDate)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: stockTransactionInput.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -59,13 +54,13 @@ export class StockTransactionService {
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const existCashSummary = await this.stockSummaryRepository.findOne({
+    const existCashSummary = await this.prisma.stockSummary.findFirst({
       where: { accountId: stockTransactionInput.accountId, type: SummaryType.CASH, isDelete: false },
     })
 
     if (!existCashSummary) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_STOCK_SUMMARY)
 
-    const existStockSummary = await this.stockSummaryRepository.findOne({
+    const existStockSummary = await this.prisma.stockSummary.findFirst({
       where: {
         accountId: stockTransactionInput.accountId,
         type: SummaryType.SUMMARY,
@@ -100,14 +95,14 @@ export class StockTransactionService {
     const stockSummary = cleanInput.existSummary.stock
 
     if (stockSummary) {
-      stockSummary.quantity = stockSummary.quantity + sign * cleanInput.quantity
-      stockSummary.amount = stockSummary.amount + sign * cleanInput.amount
+      stockSummary.quantity = new Decimal(Number(stockSummary.quantity) + sign * Number(cleanInput.quantity))
+      stockSummary.amount = new Decimal(Number(stockSummary.amount) + sign * Number(cleanInput.amount))
     } else {
       cleanInput.existSummary.stock = {
         name: cleanInput.name,
         symbol: cleanInput.symbol,
-        quantity: sign * cleanInput.quantity,
-        amount: sign * cleanInput.amount,
+        quantity: new Decimal(sign * Number(cleanInput.quantity)),
+        amount: new Decimal(sign * Number(cleanInput.amount)),
         type: SummaryType.SUMMARY,
         accountId: cleanInput.accountId,
       }
@@ -135,18 +130,28 @@ export class StockTransactionService {
       existSummary: { cash: any; stock: any }
     },
   ) {
-    return this.stockTransactionRepository.manager.transaction(async (manager) => {
+    return this.prisma.$transaction(async (prisma) => {
       const { existSummary, ...input } = cleanInput
 
-      const stockTransaction = await manager.save(StockTransaction, input)
+      const stockTransaction = await prisma.stockTransaction.create({ data: input })
 
-      await manager.upsert(StockSummary, existSummary.stock, ["accountId", "type", "symbol"])
+      await prisma.stockSummary.upsert({
+        where: {
+          accountId_type_symbol: {
+            accountId: existSummary.stock.accountId,
+            type: existSummary.stock.type,
+            symbol: existSummary.stock.symbol,
+          },
+        },
+        update: existSummary.stock,
+        create: existSummary.stock,
+      })
 
       return stockTransaction
     })
   }
 
-  private async postCreateStockTransaction(result: StockTransaction, isUpdate: boolean) {
+  private async postCreateStockTransaction(result: any, isUpdate: boolean) {
     const { symbol } = result
     if (!isUpdate) {
       const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
@@ -190,33 +195,33 @@ export class StockTransactionService {
                   ),
                 )
                 const stockInfo = stockInfos.result[0]
-                this.stockSummaryRepository
-                  .update(
-                    {
+                this.prisma.stockSummary
+                  .updateMany({
+                    where: {
                       symbol: symbol,
                       isDelete: false,
                     },
-                    {
+                    data: {
                       stockCompanyCode: stockInfo.code,
                       currency: stockInfo.currency,
                       market: stockInfo.market.code,
                       logoImageUrl: stockInfo.logoImageUrl,
                     },
-                  )
-                  .then((value) => {
-                    this.logger.debug(`Updated stock summary: ${value.affected}`)
                   })
-                this.stockTransactionRepository
-                  .update(
-                    {
+                  .then((value) => {
+                    this.logger.debug(`Updated stock summary: ${value.count}`)
+                  })
+                this.prisma.stockTransaction
+                  .update({
+                    where: {
                       id: result.id,
                     },
-                    {
+                    data: {
                       currency: stockInfo.currency,
                     },
-                  )
+                  })
                   .then((value) => {
-                    this.logger.debug(`Updated stock transaction: ${value.affected}`)
+                    this.logger.debug(`Updated stock transaction: 1`)
                   })
                 return "success"
               }
@@ -247,43 +252,50 @@ export class StockTransactionService {
     } = stockTransactionsArgs
     const skip = (page - 1) * take
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const whereConditions: FindOptionsWhere<StockTransaction> = {
+    const whereConditions: any = {
       isDelete: false,
       accountId,
     }
 
-    if (name) whereConditions.name = ILike(`%${name}%`)
+    if (name) whereConditions.name = { contains: name }
     if (symbol) whereConditions.symbol = symbol
-    if (note) whereConditions.note = ILike(`%${note}%`)
+    if (note) whereConditions.note = { contains: note }
     if (type) whereConditions.type = type
-    if (fromTransactionDate) whereConditions.transactionDate = MoreThanOrEqual(new Date(fromTransactionDate))
-    if (toTransactionDate) whereConditions.transactionDate = LessThanOrEqual(new Date(toTransactionDate))
+    if (fromTransactionDate && toTransactionDate) {
+      whereConditions.transactionDate = {
+        gte: new Date(fromTransactionDate),
+        lte: new Date(toTransactionDate),
+      }
+    } else if (fromTransactionDate) {
+      whereConditions.transactionDate = { gte: new Date(fromTransactionDate) }
+    } else if (toTransactionDate) {
+      whereConditions.transactionDate = { lte: new Date(toTransactionDate) }
+    }
 
     // Order by 설정
-    const order =
+    const orderBy =
       sortBy.length > 0
-        ? sortBy.reduce(
-            (acc, { field, direction }) => ({
-              ...acc,
-              [field]: direction ? "ASC" : "DESC",
-            }),
-            {},
-          )
-        : { createdAt: "ASC" } // 기본 정렬
+        ? sortBy.map(({ field, direction }) => ({
+            [field]: direction ? "asc" : "desc",
+          }))
+        : [{ createdAt: "asc" }] // 기본 정렬
 
-    const [stockTransactions, total] = await this.stockTransactionRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [stockTransactions, total] = await Promise.all([
+      this.prisma.stockTransaction.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.stockTransaction.count({ where: whereConditions }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
@@ -300,10 +312,10 @@ export class StockTransactionService {
   }
 
   async stockTransaction(jwtPayload: JwtPayload, id: number) {
-    const stockTransaction = await this.stockTransactionRepository.findOne({ where: { id: id, isDelete: false } })
+    const stockTransaction = await this.prisma.stockTransaction.findFirst({ where: { id: id, isDelete: false } })
     if (!stockTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_STOCK_TRANSACTION)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: stockTransaction.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -322,7 +334,7 @@ export class StockTransactionService {
     jwtPayload: JwtPayload,
     updateStockTransactionInput: UpdateStockTransactionInput,
   ) {
-    const existingStockTransaction = await this.stockTransactionRepository.findOne({
+    const existingStockTransaction = await this.prisma.stockTransaction.findFirst({
       where: { id: updateStockTransactionInput.id, isDelete: false },
     })
     if (!existingStockTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_STOCK_TRANSACTION)
@@ -339,13 +351,15 @@ export class StockTransactionService {
     const stockSummary = cleanInput.existSummary.stock
 
     if (cleanInput.isDelete) {
-      stockSummary.quantity = stockSummary.quantity + deleteSign * existingStockTransaction.quantity
-      stockSummary.amount = stockSummary.amount + deleteSign * existingStockTransaction.amount
+      stockSummary.quantity = new Decimal(Number(stockSummary.quantity) + deleteSign * Number(existingStockTransaction.quantity))
+      stockSummary.amount = new Decimal(Number(stockSummary.amount) + deleteSign * Number(existingStockTransaction.amount))
     } else {
-      stockSummary.quantity =
-        stockSummary.quantity + sign * cleanInput.quantity + deleteSign * existingStockTransaction.quantity
-      stockSummary.amount =
-        stockSummary.amount + sign * cleanInput.amount + deleteSign * existingStockTransaction.amount
+      stockSummary.quantity = new Decimal(
+        Number(stockSummary.quantity) + sign * Number(cleanInput.quantity) + deleteSign * Number(existingStockTransaction.quantity)
+      )
+      stockSummary.amount = new Decimal(
+        Number(stockSummary.amount) + sign * Number(cleanInput.amount) + deleteSign * Number(existingStockTransaction.amount)
+      )
     }
 
     return { ...updateStockTransactionInput, ...cleanInput, existingStockTransaction }
@@ -354,16 +368,27 @@ export class StockTransactionService {
   private txUpdateStockTransaction(
     cleanInput: UpdateStockTransactionInput & {
       existSummary: { cash: any; stock: any }
-    } & { existingStockTransaction: StockTransaction },
+    } & { existingStockTransaction: any },
   ) {
-    return this.stockTransactionRepository.manager.transaction(async (manager) => {
+    return this.prisma.$transaction(async (prisma) => {
       const { existSummary, existingStockTransaction, ...input } = cleanInput
 
-      const updatedStockTransaction = manager.merge(StockTransaction, existingStockTransaction, input)
+      const stockTransaction = await prisma.stockTransaction.update({
+        where: { id: existingStockTransaction.id },
+        data: input,
+      })
 
-      const stockTransaction = await manager.save(StockTransaction, updatedStockTransaction)
-
-      await manager.upsert(StockSummary, existSummary.stock, ["accountId", "type", "symbol"])
+      await prisma.stockSummary.upsert({
+        where: {
+          accountId_type_symbol: {
+            accountId: existSummary.stock.accountId,
+            type: existSummary.stock.type,
+            symbol: existSummary.stock.symbol,
+          },
+        },
+        update: existSummary.stock,
+        create: existSummary.stock,
+      })
 
       return stockTransaction
     })

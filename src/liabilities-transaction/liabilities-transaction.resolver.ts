@@ -7,8 +7,8 @@ import {
   UpdateLiabilitiesTransactionInput,
 } from "./dto"
 import { LiabilitiesTransactionService } from "./liabilities-transaction.service"
-import { LiabilitiesTransaction } from "./entities"
-import { EtcTransaction } from "../etc-transaction/entities"
+import { LiabilitiesTransaction } from "./dto/liabilities-transaction.model"
+import { EtcTransaction } from "../etc-transaction/dto/etc-transaction.model"
 
 @Resolver(() => LiabilitiesTransaction)
 export class LiabilitiesTransactionResolver {

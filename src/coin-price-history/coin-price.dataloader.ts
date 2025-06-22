@@ -1,6 +1,6 @@
 import { Injectable, Scope } from "@nestjs/common"
 import * as DataLoader from "dataloader"
-import { CoinPriceHistory } from "./entities"
+import { CoinPriceHistory } from "./dto"
 import { CoinPriceHistoryService } from "./coin-price-history.service"
 
 @Injectable({ scope: Scope.REQUEST })

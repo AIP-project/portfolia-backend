@@ -1,6 +1,6 @@
 import { faker } from "@faker-js/faker/locale/ko"
 import { CurrencyType, Token, UserRole } from "../../src/common"
-import { User } from "../../src/user/entities/user.entity"
+import { User } from "../../src/user/dto/users.model"
 import { UserState } from "../../src/common/enum/user-state.enum"
 
 export const generateMockUser = (data?: Partial<User>): User => {

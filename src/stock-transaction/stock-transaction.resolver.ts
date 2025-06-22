@@ -1,12 +1,11 @@
 import { Args, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { JwtPayload, parseISOString, UserDecoded } from "../common"
 import {
-  CreateStockTransactionInput,
+  CreateStockTransactionInput, StockTransaction,
   StockTransactions,
   StockTransactionsArgs,
   UpdateStockTransactionInput,
 } from "./dto"
-import { StockTransaction } from "./entities"
 import { StockTransactionService } from "./stock-transaction.service"
 
 @Resolver(() => StockTransaction)
