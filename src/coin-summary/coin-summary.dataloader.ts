@@ -1,17 +1,17 @@
 import { Injectable, Scope } from "@nestjs/common"
 import * as DataLoader from "dataloader"
-import { StockSummary } from "./dto"
-import { StockSummaryService } from "./stock-summary.service"
+import { CoinSummary } from "./dto"
 import { SummaryType } from "@prisma/client"
+import { CoinSummaryService } from "./coin-summary.service"
 
 @Injectable({ scope: Scope.REQUEST })
-export class StockSummaryDataLoader {
-  constructor(private readonly stockSummaryService: StockSummaryService) {}
+export class CoinSummaryDataLoader {
+  constructor(private readonly coinSummaryService: CoinSummaryService) {}
 
-  public readonly stockSummariesByAccountIdsAndSummaryType = new DataLoader<number, StockSummary[] | []>(
+  public readonly coinSummariesByAccountIdsAndSummaryType = new DataLoader<number, CoinSummary[] | []>(
     async (ids: number[]) => {
       const idsSet = new Set(ids)
-      const findResults = await this.stockSummaryService.findBy({
+      const findResults = await this.coinSummaryService.findBy({
         accountId: { in: Array.from(idsSet) },
         type: SummaryType.SUMMARY,
         isDelete: false,
@@ -23,7 +23,7 @@ export class StockSummaryDataLoader {
         amount: result.amount.toNumber(),
       }))
 
-      const groupedResults = new Map<number, StockSummary[]>()
+      const groupedResults = new Map<number, CoinSummary[]>()
 
       transformedResults.forEach((result) => {
         const accountId = result.accountId
@@ -40,10 +40,10 @@ export class StockSummaryDataLoader {
     },
   )
 
-  public readonly stockSummaryByAccountIdsAndCashType = new DataLoader<number, StockSummary | null>(
+  public readonly coinSummaryByAccountIdsAndCashType = new DataLoader<number, CoinSummary | null>(
     async (ids: number[]) => {
       const idsSet = new Set(ids)
-      const findResults = await this.stockSummaryService.findBy({
+      const findResults = await this.coinSummaryService.findBy({
         accountId: { in: Array.from(idsSet) },
         type: SummaryType.CASH,
         isDelete: false,
@@ -55,7 +55,7 @@ export class StockSummaryDataLoader {
         amount: result.amount.toNumber(),
       }))
 
-      const groupedResults = new Map<number, StockSummary>()
+      const groupedResults = new Map<number, CoinSummary>()
 
       transformedResults.forEach((result) => {
         groupedResults.set(result.accountId, result)

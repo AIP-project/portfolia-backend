@@ -8,6 +8,6 @@ import { StockSummaryDataLoader } from "./stock-summary.dataloader"
 @Module({
   imports: [ExchangeModule, StockPriceHistoryModule],
   providers: [StockSummaryResolver, StockSummaryService, StockSummaryDataLoader],
-  exports: [StockSummaryDataLoader]
+  exports: [StockSummaryDataLoader],
 })
 export class StockSummaryModule {}

@@ -1,15 +1,11 @@
 import { Injectable, Logger } from "@nestjs/common"
 import {
-  AccountType,
   ErrorMessage,
   ExternalServiceException,
   ForbiddenException,
   InterfaceConfig,
   JwtPayload,
   parseISOString,
-  SummaryType,
-  TransactionType,
-  UserRole,
   ValidationException,
 } from "../common"
 import {
@@ -25,6 +21,7 @@ import { catchError, map } from "rxjs/operators"
 import { ConfigService } from "@nestjs/config"
 import { PrismaService } from "../common/prisma"
 import { Decimal } from "@prisma/client/runtime/library"
+import { AccountType, Prisma, SummaryType, TransactionType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class StockTransactionService {
@@ -72,7 +69,6 @@ export class StockTransactionService {
     if (existStockSummary) {
       cleanInput.name = stockTransactionInput.name
       cleanInput.currency = existStockSummary.currency
-      existStockSummary.name = stockTransactionInput.name
     }
 
     const existSummary = {
@@ -88,63 +84,100 @@ export class StockTransactionService {
   }
 
   async createStockTransaction(jwtPayload: JwtPayload, createStockTransactionInput: CreateStockTransactionInput) {
-    const cleanInput = await this.cleanStockTransaction(jwtPayload, createStockTransactionInput)
-
-    const sign = cleanInput.type === TransactionType.DEPOSIT ? 1 : -1
-
-    const stockSummary = cleanInput.existSummary.stock
-
-    if (stockSummary) {
-      stockSummary.quantity = new Decimal(Number(stockSummary.quantity) + sign * Number(cleanInput.quantity))
-      stockSummary.amount = new Decimal(Number(stockSummary.amount) + sign * Number(cleanInput.amount))
-    } else {
-      cleanInput.existSummary.stock = {
-        name: cleanInput.name,
-        symbol: cleanInput.symbol,
-        quantity: new Decimal(sign * Number(cleanInput.quantity)),
-        amount: new Decimal(sign * Number(cleanInput.amount)),
-        type: SummaryType.SUMMARY,
-        accountId: cleanInput.accountId,
-      }
-    }
-
-    const isUpdate = !!cleanInput.existSummary.stock.id
-    const result = await this.txCreateStockTransaction(cleanInput)
-    this.postCreateStockTransaction(result, isUpdate).then((value) =>
+    const cleanInput = await this.cleanCreateStockTransaction(jwtPayload, createStockTransactionInput)
+    const { isUpdate, ...rest } = cleanInput
+    const result = await this.txCreateStockTransaction(rest)
+    this.postCreateStockTransaction(result, cleanInput.isUpdate).then((value) =>
       this.logger.debug(`Post create stock transaction: ${value}`),
     )
     return result
   }
 
-  private async cleanStockTransaction(
+  private async cleanCreateStockTransaction(
     jwtPayload: JwtPayload,
     createStockTransactionInput: CreateStockTransactionInput,
   ) {
     const cleanInput = await this.commonCheckStockTransaction(jwtPayload, createStockTransactionInput)
+    const { existSummary, ...restCleanInput } = cleanInput
+    const { stock: stockSummary, cash: cashSummary } = existSummary
 
-    return { ...createStockTransactionInput, ...cleanInput }
+    const isUpdate = !!stockSummary?.id
+    const sign = cleanInput.type === TransactionType.DEPOSIT ? 1 : -1
+
+    const stockSummaryUpsertData: {
+      where: Prisma.StockSummaryWhereUniqueInput
+      create: Prisma.StockSummaryUncheckedCreateInput
+      update: Prisma.StockSummaryUncheckedUpdateInput
+    } = {
+      where: { id: stockSummary?.id || -1 },
+      create: {
+        accountId: restCleanInput.accountId,
+        type: SummaryType.SUMMARY,
+        symbol: restCleanInput.symbol,
+        name: restCleanInput.name,
+        currency: restCleanInput.currency || cashSummary.currency, // currency 추가
+        quantity: new Decimal(sign * Number(restCleanInput.quantity)),
+        amount: new Decimal(sign * Number(restCleanInput.amount)),
+      },
+      update: {
+        name: restCleanInput.name,
+        quantity: {
+          increment: sign * Number(restCleanInput.quantity),
+        },
+        amount: {
+          increment: sign * Number(restCleanInput.amount),
+        },
+      },
+    }
+
+    const cashSummaryUpsertData: {
+      where: Prisma.StockSummaryWhereUniqueInput
+      data: Prisma.StockSummaryUncheckedUpdateInput
+    } = {
+      where: { id: cashSummary.id },
+      data: {
+        amount: {
+          increment: -sign * Number(restCleanInput.amount),
+        },
+      },
+    }
+
+    return {
+      stockSummaryUpsertData,
+      cashSummaryUpsertData,
+      isUpdate,
+      ...createStockTransactionInput,
+      ...restCleanInput,
+    }
   }
 
   private async txCreateStockTransaction(
     cleanInput: CreateStockTransactionInput & {
-      existSummary: { cash: any; stock: any }
+      stockSummaryUpsertData: {
+        where: Prisma.StockSummaryWhereUniqueInput
+        create: Prisma.StockSummaryUncheckedCreateInput
+        update: Prisma.StockSummaryUncheckedUpdateInput
+      }
+      cashSummaryUpsertData: {
+        where: Prisma.StockSummaryWhereUniqueInput
+        data: Prisma.StockSummaryUncheckedUpdateInput
+      }
     },
   ) {
     return this.prisma.$transaction(async (prisma) => {
-      const { existSummary, ...input } = cleanInput
+      const { stockSummaryUpsertData, cashSummaryUpsertData, ...input } = cleanInput
 
       const stockTransaction = await prisma.stockTransaction.create({ data: input })
 
       await prisma.stockSummary.upsert({
-        where: {
-          accountId_type_symbol: {
-            accountId: existSummary.stock.accountId,
-            type: existSummary.stock.type,
-            symbol: existSummary.stock.symbol,
-          },
-        },
-        update: existSummary.stock,
-        create: existSummary.stock,
+        where: stockSummaryUpsertData.where,
+        update: stockSummaryUpsertData.update,
+        create: stockSummaryUpsertData.create,
+      })
+
+      await prisma.stockSummary.update({
+        where: cashSummaryUpsertData.where,
+        data: cashSummaryUpsertData.data,
       })
 
       return stockTransaction
@@ -345,49 +378,89 @@ export class StockTransactionService {
       accountId: existingStockTransaction.accountId,
     })
 
+    const { existSummary, ...restCleanInput } = cleanInput
+    const { stock: stockSummary, cash: cashSummary } = existSummary
+
     const sign = cleanInput.type || existingStockTransaction.type === TransactionType.DEPOSIT ? 1 : -1
     const deleteSign = existingStockTransaction.type === TransactionType.DEPOSIT ? -1 : 1
 
-    const stockSummary = cleanInput.existSummary.stock
-
-    if (cleanInput.isDelete) {
-      stockSummary.quantity = new Decimal(Number(stockSummary.quantity) + deleteSign * Number(existingStockTransaction.quantity))
-      stockSummary.amount = new Decimal(Number(stockSummary.amount) + deleteSign * Number(existingStockTransaction.amount))
-    } else {
-      stockSummary.quantity = new Decimal(
-        Number(stockSummary.quantity) + sign * Number(cleanInput.quantity) + deleteSign * Number(existingStockTransaction.quantity)
-      )
-      stockSummary.amount = new Decimal(
-        Number(stockSummary.amount) + sign * Number(cleanInput.amount) + deleteSign * Number(existingStockTransaction.amount)
-      )
+    const stockSummaryUpdateData: {
+      where: Prisma.StockSummaryWhereUniqueInput
+      data: Prisma.StockSummaryUncheckedUpdateInput
+    } = {
+      where: { id: stockSummary.id },
+      data: {},
     }
 
-    return { ...updateStockTransactionInput, ...cleanInput, existingStockTransaction }
+    const cashSummaryUpdateData: {
+      where: Prisma.StockSummaryWhereUniqueInput
+      data: Prisma.StockSummaryUncheckedUpdateInput
+    } = {
+      where: { id: cashSummary.id },
+      data: {},
+    }
+
+    if (restCleanInput.isDelete) {
+      stockSummaryUpdateData.data = {
+        quantity: {
+          increment: deleteSign * Number(existingStockTransaction.quantity),
+        },
+        amount: {
+          increment: deleteSign * Number(existingStockTransaction.amount),
+        },
+      }
+      cashSummaryUpdateData.data = {
+        amount: {
+          increment: -deleteSign * Number(existingStockTransaction.amount),
+        },
+      }
+    } else {
+      stockSummaryUpdateData.data = {
+        quantity: {
+          increment: sign * Number(restCleanInput.quantity) + deleteSign * Number(existingStockTransaction.quantity),
+        },
+        amount: {
+          increment: sign * Number(restCleanInput.amount) + deleteSign * Number(existingStockTransaction.amount),
+        },
+      }
+      cashSummaryUpdateData.data = {
+        amount: {
+          increment: -sign * Number(restCleanInput.amount) - deleteSign * Number(existingStockTransaction.amount),
+        },
+      }
+    }
+
+    return { ...updateStockTransactionInput, ...restCleanInput, stockSummaryUpdateData, cashSummaryUpdateData }
   }
 
   private txUpdateStockTransaction(
     cleanInput: UpdateStockTransactionInput & {
-      existSummary: { cash: any; stock: any }
-    } & { existingStockTransaction: any },
+      stockSummaryUpdateData: {
+        where: Prisma.StockSummaryWhereUniqueInput
+        data: Prisma.StockSummaryUncheckedUpdateInput
+      }
+      cashSummaryUpdateData: {
+        where: Prisma.StockSummaryWhereUniqueInput
+        data: Prisma.StockSummaryUncheckedUpdateInput
+      }
+    },
   ) {
     return this.prisma.$transaction(async (prisma) => {
-      const { existSummary, existingStockTransaction, ...input } = cleanInput
+      const { stockSummaryUpdateData, cashSummaryUpdateData, ...input } = cleanInput
 
       const stockTransaction = await prisma.stockTransaction.update({
-        where: { id: existingStockTransaction.id },
+        where: { id: input.id },
         data: input,
       })
 
-      await prisma.stockSummary.upsert({
-        where: {
-          accountId_type_symbol: {
-            accountId: existSummary.stock.accountId,
-            type: existSummary.stock.type,
-            symbol: existSummary.stock.symbol,
-          },
-        },
-        update: existSummary.stock,
-        create: existSummary.stock,
+      await prisma.stockSummary.update({
+        where: stockSummaryUpdateData.where,
+        data: stockSummaryUpdateData.data,
+      })
+
+      await prisma.stockSummary.update({
+        where: cashSummaryUpdateData.where,
+        data: cashSummaryUpdateData.data,
       })
 
       return stockTransaction

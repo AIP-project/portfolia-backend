@@ -1,5 +1,5 @@
 import { Field, Float, ObjectType } from "@nestjs/graphql"
-import { CurrencyType, SummaryType } from "../../common"
+import { CurrencyType, SummaryType } from "@prisma/client"
 
 @ObjectType()
 export class StockSummary {

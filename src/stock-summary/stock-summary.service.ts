@@ -1,15 +1,8 @@
 import { Injectable } from "@nestjs/common"
-import {
-  AccountType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  SummaryType,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
 import { StockSummariesArgs, UpdateStockSummaryInput } from "./dto"
 import { PrismaService } from "../common/prisma"
+import { AccountType, Prisma, SummaryType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class StockSummaryService {
@@ -111,7 +104,7 @@ export class StockSummaryService {
     return this.prisma.$transaction(async (prisma) => {
       const { existingStockSummary, ...input } = cleanInput
 
-      return await prisma.stockSummary.update({
+      return prisma.stockSummary.update({
         where: { id: existingStockSummary.id },
         data: input,
       })
@@ -136,7 +129,7 @@ export class StockSummaryService {
     return null
   }
 
-  async findBy(where: any) {
+  async findBy(where: Prisma.StockSummaryWhereInput) {
     return this.prisma.stockSummary.findMany({ where })
   }
 }

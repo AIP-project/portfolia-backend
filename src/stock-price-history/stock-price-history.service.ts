@@ -20,7 +20,7 @@ export class StockPriceHistoryService {
   async updateStockPrice() {
     const nestConfig = this.configService.get<NestConfig>("nest")!
     if (nestConfig.environment === "local") {
-      return
+      return "Local environment, skipping stock price update."
     }
 
     const distinctStockGroups = await this.prisma.stockSummary.findMany({
@@ -32,8 +32,13 @@ export class StockPriceHistoryService {
         symbol: true,
         stockCompanyCode: true,
       },
-      distinct: ['symbol', 'stockCompanyCode'],
+      distinct: ["symbol", "stockCompanyCode"],
     })
+
+    if (distinctStockGroups.length === 0) {
+      this.logger.warn("No distinct stock groups found to update.")
+      return "No distinct stock groups found."
+    }
 
     const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
 
@@ -81,8 +86,8 @@ export class StockPriceHistoryService {
 
     const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>`
       SELECT MAX(id) as max_id
-      FROM stock_price_history 
-      WHERE symbol IN (${symbols.map(s => `'${s}'`).join(',')})
+      FROM stock_price_history
+      WHERE symbol IN (${symbols.map((s) => `'${s}'`).join(",")})
       GROUP BY symbol
     `
 

@@ -1,16 +1,8 @@
 import { Injectable } from "@nestjs/common"
-import {
-  AccountType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  SummaryType,
-  UserRole,
-  ValidationException,
-  transformDecimalFields,
-} from "../common"
-import { CoinSummariesArgs, CoinSummary, UpdateCoinSummaryInput } from "./dto"
+import { ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
+import { CoinSummariesArgs, UpdateCoinSummaryInput } from "./dto"
 import { PrismaService } from "../common/prisma"
+import { AccountType, Prisma, SummaryType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class CoinSummaryService {
@@ -54,7 +46,7 @@ export class CoinSummaryService {
     const totalPages = Math.ceil(total / take)
 
     return {
-      edges: coinSummaries.map((summary) => transformDecimalFields(summary, ["quantity", "amount"])),
+      edges: coinSummaries,
       pageInfo: {
         total,
         page,
@@ -110,11 +102,10 @@ export class CoinSummaryService {
     return this.prisma.$transaction(async (prisma) => {
       const { existingCoinSummary, ...input } = cleanInput
 
-      const updated = await prisma.coinSummary.update({
+      return prisma.coinSummary.update({
         where: { id: existingCoinSummary.id },
         data: input,
       })
-      return transformDecimalFields(updated, ["quantity", "amount"])
     })
   }
 
@@ -136,10 +127,7 @@ export class CoinSummaryService {
     return null
   }
 
-  async totalCoins(coinSummary: CoinSummary): Promise<CoinSummary[]> {
-    const coins = await this.prisma.coinSummary.findMany({
-      where: { accountId: coinSummary.accountId, type: SummaryType.SUMMARY, isDelete: false },
-    })
-    return coins.map((coin) => transformDecimalFields(coin, ["quantity", "amount"]))
+  async findBy(where: Prisma.CoinSummaryWhereInput) {
+    return this.prisma.coinSummary.findMany({ where })
   }
 }

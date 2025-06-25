@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common"
 import { UpdateEtcSummaryInput } from "./dto"
-import { AccountType, ErrorMessage, ForbiddenException, JwtPayload, UserRole, ValidationException } from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
 import { PrismaService } from "../common/prisma"
+import { AccountType, Prisma, UserRole } from "@prisma/client"
 
 @Injectable()
 export class EtcSummaryService {
@@ -33,10 +34,14 @@ export class EtcSummaryService {
     return this.prisma.$transaction(async (prisma) => {
       const { existingEtcSummary, ...input } = cleanInput
 
-      return await prisma.etcSummary.update({
+      return prisma.etcSummary.update({
         where: { id: existingEtcSummary.id },
         data: input,
       })
     })
+  }
+
+  async findBy(where: Prisma.EtcSummaryWhereInput) {
+    return this.prisma.etcSummary.findMany({ where })
   }
 }

@@ -1,6 +1,5 @@
-import { ObjectType, Field, ID } from "@nestjs/graphql"
-import { CurrencyType, UserRole } from "../../common"
-import { UserState } from "../../common/enum/user-state.enum"
+import { Field, ID, ObjectType } from "@nestjs/graphql"
+import { CurrencyType, UserRole, UserState } from "@prisma/client"
 
 @ObjectType({ description: "사용자 정보" })
 export class User {

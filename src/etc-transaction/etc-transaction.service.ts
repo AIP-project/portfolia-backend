@@ -1,16 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common"
-import {
-  AccountType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  parseISOString,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, parseISOString, ValidationException } from "../common"
 import { CreateEtcTransactionInput, EtcTransactionInput, EtcTransactionsArgs, UpdateEtcTransactionInput } from "./dto"
 import { PrismaService } from "../common/prisma"
-import { Decimal } from "@prisma/client/runtime/library"
+import { AccountType, Prisma, UserRole } from "@prisma/client"
 
 @Injectable()
 export class EtcTransactionService {
@@ -46,33 +38,54 @@ export class EtcTransactionService {
   }
 
   async createEtcTransaction(jwtPayload: JwtPayload, createEtcTransactionInput: CreateEtcTransactionInput) {
-    const cleanInput = await this.cleanEtcTransaction(jwtPayload, createEtcTransactionInput)
+    const cleanInput = await this.cleanCreateEtcTransaction(jwtPayload, createEtcTransactionInput)
     return this.txCreateEtcTransaction(cleanInput)
   }
 
-  private async cleanEtcTransaction(jwtPayload: JwtPayload, createEtcTransactionInput: CreateEtcTransactionInput) {
+  private async cleanCreateEtcTransaction(
+    jwtPayload: JwtPayload,
+    createEtcTransactionInput: CreateEtcTransactionInput,
+  ) {
     const cleanInput = await this.commonCheckEtcTransaction(jwtPayload, createEtcTransactionInput)
 
-    cleanInput.existSummary.count = Number(cleanInput.existSummary.count) + 1
-    cleanInput.existSummary.purchasePrice = new Decimal(Number(cleanInput.existSummary.purchasePrice) + Number(cleanInput.purchasePrice))
-    cleanInput.existSummary.currentPrice = new Decimal(Number(cleanInput.existSummary.currentPrice) + Number(cleanInput.currentPrice))
+    const { existSummary, ...restCleanInput } = cleanInput
 
-    return { ...createEtcTransactionInput, ...cleanInput }
+    const summaryUpdateData: {
+      where: Prisma.EtcSummaryWhereUniqueInput
+      data: Prisma.EtcSummaryUncheckedUpdateInput
+    } = {
+      where: { id: existSummary.id },
+      data: {
+        count: {
+          increment: 1,
+        },
+        purchasePrice: {
+          increment: Number(cleanInput.purchasePrice),
+        },
+        currentPrice: {
+          increment: cleanInput.currentPrice ? Number(cleanInput.currentPrice) : 0,
+        },
+      },
+    }
+
+    return { ...createEtcTransactionInput, ...restCleanInput, summaryUpdateData }
   }
 
-  private async txCreateEtcTransaction(cleanInput: CreateEtcTransactionInput & { existSummary: any }) {
+  private async txCreateEtcTransaction(
+    cleanInput: CreateEtcTransactionInput & {
+      summaryUpdateData: {
+        where: Prisma.EtcSummaryWhereUniqueInput
+        data: Prisma.EtcSummaryUncheckedUpdateInput
+      }
+    },
+  ) {
     return this.prisma.$transaction(async (prisma) => {
-      const { existSummary, ...input } = cleanInput
-
+      const { summaryUpdateData, ...input } = cleanInput
       const etcTransaction = await prisma.etcTransaction.create({ data: input })
 
       await prisma.etcSummary.update({
-        where: { id: existSummary.id },
-        data: {
-          count: existSummary.count,
-          purchasePrice: existSummary.purchasePrice,
-          currentPrice: existSummary.currentPrice,
-        },
+        where: summaryUpdateData.where,
+        data: summaryUpdateData.data,
       })
 
       return etcTransaction
@@ -172,48 +185,87 @@ export class EtcTransactionService {
     jwtPayload: JwtPayload,
     updateEtcTransactionInput: UpdateEtcTransactionInput,
   ) {
+    // 기존 트랜잭션 조회
     const existingEtcTransaction = await this.prisma.etcTransaction.findFirst({
       where: { id: updateEtcTransactionInput.id, isDelete: false },
     })
+
     if (!existingEtcTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ETC_TRANSACTION)
 
+    // 공통 체크 수행
     const cleanInput = await this.commonCheckEtcTransaction(jwtPayload, {
       ...updateEtcTransactionInput,
       accountId: existingEtcTransaction.accountId,
     })
 
-    if (cleanInput.isDelete) {
-      cleanInput.existSummary.count = Number(cleanInput.existSummary.count) - 1
-      cleanInput.existSummary.purchasePrice = new Decimal(Number(cleanInput.existSummary.purchasePrice) - Number(existingEtcTransaction.purchasePrice))
-      cleanInput.existSummary.currentPrice = new Decimal(Number(cleanInput.existSummary.currentPrice) - Number(existingEtcTransaction.currentPrice))
-    } else {
-      cleanInput.existSummary.purchasePrice = new Decimal(Number(cleanInput.existSummary.purchasePrice) + Number(cleanInput.purchasePrice) - Number(existingEtcTransaction.purchasePrice))
-      cleanInput.existSummary.currentPrice = new Decimal(Number(cleanInput.existSummary.currentPrice) + Number(cleanInput.currentPrice) - Number(existingEtcTransaction.currentPrice))
+    const { existSummary, ...restCleanInput } = cleanInput
+
+    // increment 방식으로 summary 업데이트 데이터 생성
+    const summaryUpdateData: {
+      where: Prisma.EtcSummaryWhereUniqueInput
+      data: Prisma.EtcSummaryUncheckedUpdateInput
+    } = {
+      where: { id: existSummary.id },
+      data: {},
     }
 
-    return { ...updateEtcTransactionInput, ...cleanInput, existingEtcTransaction }
+    // 기존 트랜잭션 값들
+    const oldPurchasePrice = Number(existingEtcTransaction.purchasePrice)
+    const oldCurrentPrice = Number(existingEtcTransaction.currentPrice || 0)
+    const newPurchasePrice = Number(cleanInput.purchasePrice)
+    const newCurrentPrice = Number(cleanInput.currentPrice || 0)
+
+    if (cleanInput.isDelete) {
+      // 삭제 케이스: 기존 트랜잭션 값들을 차감
+      summaryUpdateData.data = {
+        count: {
+          increment: -1,
+        },
+        purchasePrice: {
+          increment: -oldPurchasePrice,
+        },
+        currentPrice: {
+          increment: -oldCurrentPrice,
+        },
+      }
+    } else {
+      // 업데이트 케이스: 차이값만큼 증감
+      summaryUpdateData.data = {
+        purchasePrice: {
+          increment: newPurchasePrice - oldPurchasePrice,
+        },
+        currentPrice: {
+          increment: newCurrentPrice - oldCurrentPrice,
+        },
+      }
+    }
+
+    return {
+      ...updateEtcTransactionInput,
+      ...restCleanInput,
+      summaryUpdateData,
+    }
   }
 
-  private txUpdateEtcTransaction(
-    cleanInput: UpdateEtcTransactionInput & { existSummary: any } & {
-      existingEtcTransaction: any
+  private async txUpdateEtcTransaction(
+    cleanInput: UpdateEtcTransactionInput & {
+      summaryUpdateData: {
+        where: Prisma.EtcSummaryWhereUniqueInput
+        data: Prisma.EtcSummaryUncheckedUpdateInput
+      }
     },
   ) {
     return this.prisma.$transaction(async (prisma) => {
-      const { existingEtcTransaction, existSummary, ...input } = cleanInput
+      const { summaryUpdateData, ...input } = cleanInput
 
       const etcTransaction = await prisma.etcTransaction.update({
-        where: { id: existingEtcTransaction.id },
+        where: { id: input.id },
         data: input,
       })
 
       await prisma.etcSummary.update({
-        where: { id: existSummary.id },
-        data: {
-          count: existSummary.count,
-          purchasePrice: existSummary.purchasePrice,
-          currentPrice: existSummary.currentPrice,
-        },
+        where: summaryUpdateData.where,
+        data: summaryUpdateData.data,
       })
 
       return etcTransaction

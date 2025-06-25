@@ -1,18 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { AccountInput, AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
-import { Account } from "./dto"
-import {
-  AccountType,
-  addAmount,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  SummaryType,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { Account, AccountInput, AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
+import { addAmount, ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
 import { PrismaService } from "../common/prisma"
-import { Prisma } from "@prisma/client"
+import { AccountType, Prisma, SummaryType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class AccountService {
@@ -162,8 +152,8 @@ export class AccountService {
   }
 
   async account(jwtPayload: JwtPayload, id: number) {
-    const account = await this.prisma.account.findFirst({ 
-      where: { id: id, isDelete: false } 
+    const account = await this.prisma.account.findFirst({
+      where: { id: id, isDelete: false },
     })
 
     if (!account) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -248,15 +238,15 @@ export class AccountService {
    */
   private async txDeleteBankEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 은행 요약 정보 삭제
-    await prisma.bankSummary.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.bankSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
 
     // 은행 거래 정보 삭제
-    await prisma.bankTransaction.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.bankTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
   }
 
@@ -265,15 +255,15 @@ export class AccountService {
    */
   private async txDeleteStockEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 주식 요약 정보 삭제
-    await prisma.stockSummary.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.stockSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
 
     // 주식 거래 정보 삭제
-    await prisma.stockTransaction.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.stockTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
   }
 
@@ -282,15 +272,15 @@ export class AccountService {
    */
   private async txDeleteCoinEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 코인 요약 정보 삭제
-    await prisma.coinSummary.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.coinSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
 
     // 코인 거래 정보 삭제
-    await prisma.coinTransaction.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.coinTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
   }
 
@@ -299,15 +289,15 @@ export class AccountService {
    */
   private async txDeleteEtcEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 기타 요약 정보 삭제
-    await prisma.etcSummary.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.etcSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
 
     // 기타 거래 정보 삭제
-    await prisma.etcTransaction.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.etcTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
   }
 
@@ -316,24 +306,24 @@ export class AccountService {
    */
   private async txDeleteLiabilitiesEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 부채 요약 정보 삭제
-    await prisma.liabilitiesSummary.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.liabilitiesSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
 
     // 부채 거래 정보 삭제
-    await prisma.liabilitiesTransaction.updateMany({ 
-      where: { accountId }, 
-      data: { isDelete: true } 
+    await prisma.liabilitiesTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
     })
   }
 
   async resolveBankSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.BANK) return null
     return this.prisma.bankSummary.findFirst({
-      where: { 
-        accountId: account.id, 
-        account: { userId: payload.id, isDelete: false } 
+      where: {
+        accountId: account.id,
+        account: { userId: payload.id, isDelete: false },
       },
     })
   }
@@ -341,10 +331,10 @@ export class AccountService {
   async resolveStockSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.STOCK) return null
     return this.prisma.stockSummary.findFirst({
-      where: { 
-        accountId: account.id, 
-        type: SummaryType.CASH, 
-        account: { userId: payload.id, isDelete: false } 
+      where: {
+        accountId: account.id,
+        type: SummaryType.CASH,
+        account: { userId: payload.id, isDelete: false },
       },
     })
   }
@@ -352,10 +342,10 @@ export class AccountService {
   async resolveCoinSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.COIN) return null
     return this.prisma.coinSummary.findFirst({
-      where: { 
-        accountId: account.id, 
-        type: SummaryType.CASH, 
-        account: { userId: payload.id, isDelete: false } 
+      where: {
+        accountId: account.id,
+        type: SummaryType.CASH,
+        account: { userId: payload.id, isDelete: false },
       },
     })
   }
@@ -363,9 +353,9 @@ export class AccountService {
   async resolveEtcSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.ETC) return null
     return this.prisma.etcSummary.findFirst({
-      where: { 
-        accountId: account.id, 
-        account: { userId: payload.id, isDelete: false } 
+      where: {
+        accountId: account.id,
+        account: { userId: payload.id, isDelete: false },
       },
     })
   }
@@ -373,9 +363,9 @@ export class AccountService {
   async resolveLiabilitiesSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.LIABILITIES) return null
     return this.prisma.liabilitiesSummary.findFirst({
-      where: { 
-        accountId: account.id, 
-        account: { userId: payload.id, isDelete: false } 
+      where: {
+        accountId: account.id,
+        account: { userId: payload.id, isDelete: false },
       },
     })
   }
@@ -419,7 +409,15 @@ export class AccountService {
     const exchangeRateOne = await this.prisma.exchangeRate.findFirst({
       orderBy: { createdAt: "desc" },
     })
-    if (!exchangeRateOne) return null
+    if (!exchangeRateOne)
+      return {
+        asset: [],
+        liabilities: [],
+        cash: [],
+        assetTotalAmount: 0,
+        liabilitiesTotalAmount: 0,
+        cashTotalAmount: 0,
+      }
 
     const exchangeRate = exchangeRateOne.exchangeRates as Record<string, number>
 
@@ -434,10 +432,12 @@ export class AccountService {
 
     if (coinSymbols.length > 0) {
       coinPriceHistories = await this.prisma.$queryRaw`
-        SELECT DISTINCT ON (symbol) symbol, price
-        FROM coin_price_history 
-        WHERE symbol IN (${Prisma.join(coinSymbols)})
-        ORDER BY symbol, "createdAt" DESC
+        SELECT cph1.symbol, cph1.price
+        FROM coin_price_history cph1
+               INNER JOIN (SELECT symbol, MAX(createdAt) as max_created_at
+                           FROM coin_price_history
+                           WHERE symbol IN (${Prisma.join(coinSymbols)})
+                           GROUP BY symbol) cph2 ON cph1.symbol = cph2.symbol AND cph1.createdAt = cph2.max_created_at
       `
     }
 
@@ -445,10 +445,8 @@ export class AccountService {
       const accountName = summary.account.nickName
 
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const currentPrice = coinPriceHistories.find((cph) => cph.symbol === summary.symbol)?.price
       const amountInDefaultCurrency = (currentPrice ? Number(currentPrice) : Number(summary.amount)) * crossRate
@@ -481,10 +479,12 @@ export class AccountService {
 
     if (stockSymbols.length > 0) {
       stockPriceHistories = await this.prisma.$queryRaw`
-        SELECT DISTINCT ON (symbol) symbol, base
-        FROM stock_price_history 
-        WHERE symbol IN (${Prisma.join(stockSymbols)})
-        ORDER BY symbol, "createdAt" DESC
+        SELECT sph1.symbol, sph1.base
+        FROM stock_price_history sph1
+               INNER JOIN (SELECT symbol, MAX(createdAt) as max_created_at
+                           FROM stock_price_history
+                           WHERE symbol IN (${Prisma.join(stockSymbols)})
+                           GROUP BY symbol) sph2 ON sph1.symbol = sph2.symbol AND sph1.createdAt = sph2.max_created_at
       `
     }
 
@@ -492,10 +492,8 @@ export class AccountService {
       const accountName = summary.account.nickName
 
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const currentPrice = stockPriceHistories.find((sph) => sph.symbol === summary.symbol)?.base
       const amountInDefaultCurrency = (currentPrice ? Number(currentPrice) : Number(summary.amount)) * crossRate
@@ -522,10 +520,8 @@ export class AccountService {
     for (const summary of etcSummary) {
       const accountName = summary.account.nickName
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
 
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const amountInDefaultCurrency = (Number(summary.currentPrice) || Number(summary.purchasePrice)) * crossRate
@@ -542,10 +538,8 @@ export class AccountService {
     for (const summary of liabilitiesSummary) {
       const accountName = summary.account.nickName
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const amountInDefaultCurrency = (Number(summary.remainingAmount) || Number(summary.amount)) * crossRate
 
@@ -561,10 +555,8 @@ export class AccountService {
     for (const summary of bankSummary) {
       const accountName = summary.account.nickName
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const amountInDefaultCurrency = Number(summary.balance) * crossRate
 
@@ -576,6 +568,17 @@ export class AccountService {
       }
       cashTotalAmount = addAmount(cashTotalAmount, amountInDefaultCurrency)
     }
+
+    const temp = {
+      asset: assets,
+      liabilities: liabilities,
+      cash: cash,
+      assetTotalAmount: assetTotalAmount,
+      liabilitiesTotalAmount: liabilitiesTotalAmount,
+      cashTotalAmount: cashTotalAmount,
+    }
+
+    console.log("Dashboard Summary:", JSON.stringify(temp, null, 2))
 
     return {
       asset: assets,
@@ -615,46 +618,36 @@ export class AccountService {
 
     const totalBank = bankSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, Number(summary.balance) * crossRate)
     }, 0)
     const totalStock = stockSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, Number(summary.amount) * crossRate)
     }, 0)
     const totalCoin = coinSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, Number(summary.amount) * crossRate)
     }, 0)
     const totalEtc = etcSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, (Number(summary.currentPrice) || Number(summary.purchasePrice)) * crossRate)
     }, 0)
     const totalLiabilities = liabilitiesSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       return addAmount(acc, (Number(summary.remainingAmount) || Number(summary.amount)) * crossRate)
     }, 0)

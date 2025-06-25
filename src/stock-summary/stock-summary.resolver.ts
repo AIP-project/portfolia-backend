@@ -1,10 +1,11 @@
 import { Args, Float, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { StockSummaryService } from "./stock-summary.service"
-import { CurrencyType, JwtPayload, SummaryType, UserDecoded } from "../common"
+import { JwtPayload, UserDecoded } from "../common"
 import { StockSummaries, StockSummariesArgs, StockSummary, UpdateStockSummaryInput } from "./dto"
 import { ExchangeDataLoader } from "../exchange/exchange.dataloader"
 import { StockPriceDataLoader } from "../stock-price-history/stock-price.dataloader"
 import { StockSummaryDataLoader } from "./stock-summary.dataloader"
+import { CurrencyType, SummaryType } from "@prisma/client"
 
 @Resolver(() => StockSummary)
 export class StockSummaryResolver {
@@ -56,7 +57,7 @@ export class StockSummaryResolver {
 
   @ResolveField("pricePerShare", () => Float, { nullable: true, description: "구매한 개당 가격" })
   async resolvePricePerUnit(@Parent() stockSummary: StockSummary) {
-    if (stockSummary.type === SummaryType.CASH) return 0
+    if (stockSummary.type === SummaryType.CASH || stockSummary.quantity) return 0
     return stockSummary.amount / stockSummary.quantity
   }
 
@@ -109,6 +110,9 @@ export class StockSummaryResolver {
     if (!stockSummary.currency || !stockSummary.symbol) return 0
 
     const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(stockSummary.currency)
+
+    if (!exchangeRate) return 0
+
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[stockSummary.currency]
 
@@ -127,7 +131,7 @@ export class StockSummaryResolver {
   async resolveDifferenceRate(@Parent() stockSummary: StockSummary) {
     const currentAmount = await this.resolveCurrentAmount(stockSummary)
     if (!currentAmount) return 0
-    return (currentAmount - stockSummary.amount) / stockSummary.amount * 100
+    return ((currentAmount - stockSummary.amount) / stockSummary.amount) * 100
   }
 
   @ResolveField("earned", () => Float, { nullable: true, description: "수익" })
@@ -148,7 +152,9 @@ export class StockSummaryResolver {
   @ResolveField("totalStockValue", () => Float, { nullable: true, description: "보유 주식 총 가치" })
   async resolveTotalStockValue(@Parent() stockSummary: StockSummary) {
     if (stockSummary.type !== SummaryType.CASH) return 0
-    const totalStocks = await this.stockSummaryDataLoader.stockSummariesByAccountIdsAndSummaryType.load(stockSummary.accountId)
+    const totalStocks = await this.stockSummaryDataLoader.stockSummariesByAccountIdsAndSummaryType.load(
+      stockSummary.accountId,
+    )
     const amounts = await Promise.all(totalStocks.map((stock: StockSummary) => this.resolveCurrentAmount(stock)))
     return amounts.reduce((acc, currentAmount) => acc + currentAmount, 0)
   }

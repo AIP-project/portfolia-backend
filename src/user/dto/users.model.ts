@@ -1,4 +1,4 @@
-import { ObjectType} from "@nestjs/graphql"
+import { ObjectType } from "@nestjs/graphql"
 import { Paginated } from "../../common"
 import { User } from "./user.model"
 

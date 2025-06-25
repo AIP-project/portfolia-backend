@@ -19,50 +19,51 @@ export class ExchangeService {
 
   async updateExchange() {
     const nestConfig = this.configService.get<NestConfig>("nest")!
-    if (nestConfig.environment === "local") {
-      return
-    }
+    // if (nestConfig.environment === "local") {
+    //   return
+    // }
 
     const bankCurrencies = await this.prisma.bankSummary.findMany({
+      where: { isDelete: false },
       select: { currency: true },
       distinct: ["currency"],
     })
 
     const stockCurrencies = await this.prisma.stockSummary.findMany({
+      where: { isDelete: false },
       select: { currency: true },
       distinct: ["currency"],
     })
 
     const coinCurrencies = await this.prisma.coinSummary.findMany({
+      where: { isDelete: false },
       select: { currency: true },
       distinct: ["currency"],
     })
 
     const etcCurrencies = await this.prisma.etcSummary.findMany({
+      where: { isDelete: false },
       select: { currency: true },
       distinct: ["currency"],
     })
 
     const liabilitiesCurrencies = await this.prisma.liabilitiesSummary.findMany({
+      where: { isDelete: false },
       select: { currency: true },
       distinct: ["currency"],
     })
 
-    const bankCurrencyValues = bankCurrencies.map((item) => item.currency)
-    const stockCurrencyValues = stockCurrencies.map((item) => item.currency)
-    const coinCurrencyValues = coinCurrencies.map((item) => item.currency)
-    const etcCurrencyValues = etcCurrencies.map((item) => item.currency)
-    const liabilitiesCurrencyValues = liabilitiesCurrencies.map((item) => item.currency)
-
-    const uniqueCurrencies = [
-      ...new Set([
-        ...bankCurrencyValues,
-        ...stockCurrencyValues,
-        ...coinCurrencyValues,
-        ...etcCurrencyValues,
-        ...liabilitiesCurrencyValues,
-      ]),
-    ].filter((currency) => currency !== null && currency !== undefined)
+    const uniqueCurrencies = Array.from(
+      new Set(
+        [
+          ...bankCurrencies.map((item) => item.currency),
+          ...stockCurrencies.map((item) => item.currency),
+          ...coinCurrencies.map((item) => item.currency),
+          ...etcCurrencies.map((item) => item.currency),
+          ...liabilitiesCurrencies.map((item) => item.currency),
+        ].filter((currency) => currency != null),
+      ), // null과 undefined 모두 제거
+    )
 
     const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
     const url = `${interfaceConfig.exchangeRateApiUrl}?app_id=${interfaceConfig.exchangeRateApiKey}&symbols=${uniqueCurrencies.join(",")}`

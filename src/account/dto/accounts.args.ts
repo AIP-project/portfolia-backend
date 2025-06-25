@@ -1,6 +1,7 @@
 import { ArgsType, Field } from "@nestjs/graphql"
 import { IsNumber, IsOptional, IsString } from "class-validator"
-import { AccountType, CurrencyType, PageSearchArgs } from "../../common"
+import { PageSearchArgs } from "../../common"
+import { AccountType } from "@prisma/client"
 
 @ArgsType()
 export class AccountsArgs extends PageSearchArgs {

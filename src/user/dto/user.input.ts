@@ -1,7 +1,6 @@
 import { Field, InputType } from "@nestjs/graphql"
-import { IsEmail, IsEnum, IsNumber, IsOptional, IsString, MinLength } from "class-validator"
-import { CurrencyType, UserRole } from "../../common"
-import { UserState } from "../../common/enum/user-state.enum"
+import { IsEmail, IsEnum, IsNumber, IsOptional, IsString } from "class-validator"
+import { CurrencyType, UserRole, UserState } from "@prisma/client"
 
 @InputType({ description: "사용자 입력 타입" })
 export class UserInput {

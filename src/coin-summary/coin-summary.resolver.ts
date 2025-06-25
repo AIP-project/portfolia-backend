@@ -1,9 +1,11 @@
 import { Args, Float, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { CoinSummaryService } from "./coin-summary.service"
-import { CurrencyType, JwtPayload, SummaryType, UserDecoded, toNumber } from "../common"
+import { JwtPayload, UserDecoded } from "../common"
 import { CoinSummaries, CoinSummariesArgs, CoinSummary, UpdateCoinSummaryInput } from "./dto"
 import { CoinPriceDataLoader } from "../coin-price-history/coin-price.dataloader"
 import { ExchangeDataLoader } from "../exchange/exchange.dataloader"
+import { CurrencyType, SummaryType } from "@prisma/client"
+import { CoinSummaryDataLoader } from "./coin-summary.dataloader"
 
 @Resolver(() => CoinSummary)
 export class CoinSummaryResolver {
@@ -11,6 +13,7 @@ export class CoinSummaryResolver {
     private readonly coinSummaryService: CoinSummaryService,
     private readonly exchangeDataLoader: ExchangeDataLoader,
     private readonly coinPriceDataLoader: CoinPriceDataLoader,
+    private readonly coinSummaryDataLoader: CoinSummaryDataLoader,
   ) {}
 
   @Query(() => CoinSummaries, { description: "코인 요약 정보 조회" })
@@ -49,13 +52,13 @@ export class CoinSummaryResolver {
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
 
-    return toNumber(coinSummary.amount) * crossRate
+    return coinSummary.amount * crossRate
   }
 
   @ResolveField("pricePerShare", () => Float, { nullable: true, description: "구매한 개당 가격" })
   async resolvePricePerUnit(@Parent() coinSummary: CoinSummary) {
-    if (coinSummary.type === SummaryType.CASH) return 0
-    return toNumber(coinSummary.amount) / toNumber(coinSummary.quantity)
+    if (coinSummary.type === SummaryType.CASH || coinSummary.quantity) return 0
+    return coinSummary.amount / coinSummary.quantity
   }
 
   @ResolveField("currentAmount", () => Float, { nullable: true, description: "현재 가치 총 금액" })
@@ -74,7 +77,7 @@ export class CoinSummaryResolver {
 
     if (!historyCurrencyRate || !summaryCurrencyRate) return 0
 
-    return (toNumber(coinSummary.quantity) * coinPriceHistory.price * historyCurrencyRate) / summaryCurrencyRate
+    return (coinSummary.quantity * coinPriceHistory.price * historyCurrencyRate) / summaryCurrencyRate
   }
 
   @ResolveField("currentAmountInDefaultCurrency", () => Float, {
@@ -106,7 +109,7 @@ export class CoinSummaryResolver {
 
     if (!historyCurrencyRate) return 0
 
-    return ((toNumber(coinSummary.quantity) * coinPriceHistory.price * historyCurrencyRate) / summaryCurrencyRate) * crossRate
+    return ((coinSummary.quantity * coinPriceHistory.price * historyCurrencyRate) / summaryCurrencyRate) * crossRate
   }
 
   @ResolveField("pricePerShareInDefaultCurrency", () => Float, {
@@ -120,6 +123,9 @@ export class CoinSummaryResolver {
     if (!coinSummary.currency || !coinSummary.symbol) return 0
 
     const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
+
+    if (!exchangeRate) return 0
+
     const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
     const summaryCurrencyRate = exchangeRate.exchangeRates[coinSummary.currency]
 
@@ -142,14 +148,14 @@ export class CoinSummaryResolver {
   async resolveDifferenceRate(@Parent() coinSummary: CoinSummary) {
     const currentAmount = await this.resolveCurrentAmount(coinSummary)
     if (!currentAmount) return 0
-    return (currentAmount - toNumber(coinSummary.amount)) / toNumber(coinSummary.amount) * 100
+    return ((currentAmount - coinSummary.amount) / coinSummary.amount) * 100
   }
 
   @ResolveField("earned", () => Float, { nullable: true, description: "수익" })
   async resolveEarned(@Parent() coinSummary: CoinSummary) {
     const currentAmount = await this.resolveCurrentAmount(coinSummary)
     if (!currentAmount) return 0
-    return currentAmount - toNumber(coinSummary.amount)
+    return currentAmount - coinSummary.amount
   }
 
   @ResolveField("earnedInDefaultCurrency", () => Float, { nullable: true, description: "계정 기본 통화로 환산한 수익" })
@@ -163,8 +169,9 @@ export class CoinSummaryResolver {
   @ResolveField("totalCoinValue", () => Float, { nullable: true, description: "보유 코인 총 가치" })
   async resolveTotalCoinValue(@Parent() coinSummary: CoinSummary) {
     if (coinSummary.type !== SummaryType.CASH) return 0
-    const totalStocks: CoinSummary[] = await this.coinSummaryService.totalCoins(coinSummary)
-    const amounts = await Promise.all(totalStocks.map((stock) => this.resolveCurrentAmount(stock)))
+    const totalCoinSummaries: CoinSummary[] =
+      await this.coinSummaryDataLoader.coinSummariesByAccountIdsAndSummaryType.load(coinSummary.accountId)
+    const amounts = await Promise.all(totalCoinSummaries.map((coinSummary) => this.resolveCurrentAmount(coinSummary)))
     return amounts.reduce((acc, currentAmount) => acc + currentAmount, 0)
   }
 
@@ -172,11 +179,17 @@ export class CoinSummaryResolver {
   async resolveTotalAccountValue(@Parent() coinSummary: CoinSummary) {
     if (coinSummary.type !== SummaryType.CASH) return 0
     const totalCoinValue = await this.resolveTotalCoinValue(coinSummary)
-    return toNumber(coinSummary.amount) + (totalCoinValue || 0)
+    return coinSummary.amount + (totalCoinValue || 0)
   }
 
-  @ResolveField("totalAccountValueInDefaultCurrency", () => Float, { nullable: true, description: "계정 기본 통화로 환산한 계좌 총 가치" })
-  async resolveTotalAccountValueInDefaultCurrency(@UserDecoded() jwtPayload: JwtPayload, @Parent() coinSummary: CoinSummary) {
+  @ResolveField("totalAccountValueInDefaultCurrency", () => Float, {
+    nullable: true,
+    description: "계정 기본 통화로 환산한 계좌 총 가치",
+  })
+  async resolveTotalAccountValueInDefaultCurrency(
+    @UserDecoded() jwtPayload: JwtPayload,
+    @Parent() coinSummary: CoinSummary,
+  ) {
     if (coinSummary.type !== SummaryType.CASH) return 0
     const totalCoinValue = await this.resolveTotalCoinValue(coinSummary)
 
@@ -188,6 +201,6 @@ export class CoinSummaryResolver {
 
     const crossRate = defaultCurrencyRate / summaryCurrencyRate
 
-    return (toNumber(coinSummary.amount) + (totalCoinValue || 0)) * crossRate
+    return (coinSummary.amount + (totalCoinValue || 0)) * crossRate
   }
 }

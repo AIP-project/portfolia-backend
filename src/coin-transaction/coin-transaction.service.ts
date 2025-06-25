@@ -1,16 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common"
-import {
-  AccountType,
-  CurrencyType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  parseISOString,
-  SummaryType,
-  TransactionType,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, parseISOString, ValidationException } from "../common"
 import {
   CoinTransactionInput,
   CoinTransactionsArgs,
@@ -19,7 +8,7 @@ import {
 } from "./dto"
 import { PrismaService } from "../common/prisma"
 import { Decimal } from "@prisma/client/runtime/library"
-import { Prisma } from "@prisma/client"
+import { AccountType, Prisma, SummaryType, TransactionType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class CoinTransactionService {
@@ -50,7 +39,7 @@ export class CoinTransactionService {
     })
 
     if (!existCashSummary) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_COIN_SUMMARY)
-    cleanInput.currency = existCashSummary.currency as CurrencyType
+    cleanInput.currency = existCashSummary.currency
 
     const existCoinSummary = await this.prisma.coinSummary.findFirst({
       where: {
@@ -63,7 +52,7 @@ export class CoinTransactionService {
     })
 
     if (existCoinSummary) {
-      cleanInput.name = existCoinSummary.name
+      cleanInput.name = coinTransactionInput.name
     }
 
     const existSummary = {
@@ -79,88 +68,98 @@ export class CoinTransactionService {
   }
 
   async createCoinTransaction(jwtPayload: JwtPayload, createCoinTransactionInput: CreateCoinTransactionInput) {
-    // 1. 데이터 검증 및 DB 조작에 필요한 데이터 '준비'
-    const preparedData = await this.cleanCoinTransaction(jwtPayload, createCoinTransactionInput);
-
-    // 2. 준비된 데이터를 가지고 DB 트랜잭션 '실행'
-    return this.txCreateCoinTransaction(preparedData);
+    const cleanInput = await this.cleanCreateCoinTransaction(jwtPayload, createCoinTransactionInput)
+    return this.txCreateCoinTransaction(cleanInput)
   }
 
-  private async cleanCoinTransaction(jwtPayload: JwtPayload, createCoinTransactionInput: CreateCoinTransactionInput) {
-    // 1. 공통 유효성 검사 및 관련 데이터 조회
-    const commonData = await this.commonCheckCoinTransaction(jwtPayload, createCoinTransactionInput)
-    const { existSummary, ...transactionInputData } = commonData
+  private async cleanCreateCoinTransaction(
+    jwtPayload: JwtPayload,
+    createCoinTransactionInput: CreateCoinTransactionInput,
+  ) {
+    const cleanInput = await this.commonCheckCoinTransaction(jwtPayload, createCoinTransactionInput)
 
-    const sign = transactionInputData.type === TransactionType.DEPOSIT ? 1 : -1
-    const quantityChange = new Decimal(sign * Number(transactionInputData.quantity))
-    const amountChange = new Decimal(sign * Number(transactionInputData.amount))
+    const { existSummary, ...restCleanInput } = cleanInput
+    const { coin: coinSummary, cash: cashSummary } = existSummary
 
-    // 2. `upsert`에 필요한 create와 update 객체를 '미리' 정의
-    // create 객체: 'existSummary.coin'이 없을 때 사용될 데이터
-    const createPayload: Prisma.CoinSummaryCreateInput = {
-      name: commonData.name,
-      symbol: commonData.symbol,
-      slug: commonData.slug,
-      quantity: quantityChange, // 초기 생성 시 수량
-      amount: amountChange, // 초기 생성 시 금액
-      currency: commonData.currency,
-      type: SummaryType.SUMMARY,
-      account: {
-        connect: {
-          id: commonData.accountId, // 어떤 account에 연결할지 ID를 명시
+    const sign = cleanInput.type === TransactionType.DEPOSIT ? 1 : -1
+
+    const coinSummaryUpsertData: {
+      where: Prisma.CoinSummaryWhereUniqueInput
+      create: Prisma.CoinSummaryUncheckedCreateInput
+      update: Prisma.CoinSummaryUncheckedUpdateInput
+    } = {
+      where: { id: coinSummary?.id || -1 },
+      create: {
+        accountId: restCleanInput.accountId,
+        type: SummaryType.SUMMARY,
+        symbol: restCleanInput.symbol,
+        name: restCleanInput.name,
+        slug: restCleanInput.slug,
+        currency: restCleanInput.currency || cashSummary.currency, // currency 추가
+        quantity: new Decimal(sign * Number(restCleanInput.quantity)),
+        amount: new Decimal(sign * Number(restCleanInput.amount)),
+      },
+      update: {
+        name: restCleanInput.name,
+        quantity: {
+          increment: sign * Number(restCleanInput.quantity),
+        },
+        amount: {
+          increment: sign * Number(restCleanInput.amount),
         },
       },
     }
 
-    // update 객체: 'existSummary.coin'이 있을 때 사용될 데이터
-    const updatePayload: Prisma.CoinSummaryUpdateInput = {
-      quantity: { increment: quantityChange }, // 원자적 연산으로 안전하게 값 증가/감소
-      amount: { increment: amountChange },
-    }
-
-    // 3. `upsert`에 전달할 최종 객체 생성
-    // 'existSummary.coin'이 있든 없든, where 조건은 동일하게 구성되어야 합니다.
-    // symbol, currency 등은 createCoinTransactionInput에서 가져와야 합니다.
-    const summaryToUpsert = {
-      where: {
-        accountId_type_symbol_currency: {
-          accountId: transactionInputData.accountId,
-          type: SummaryType.SUMMARY,
-          symbol: transactionInputData.symbol,
-          currency: commonData.currency,
+    const cashSummaryUpsertData: {
+      where: Prisma.CoinSummaryWhereUniqueInput
+      data: Prisma.CoinSummaryUncheckedUpdateInput
+    } = {
+      where: { id: cashSummary.id },
+      data: {
+        amount: {
+          increment: -sign * Number(restCleanInput.amount),
         },
       },
-      create: createPayload,
-      update: updatePayload,
     }
 
-    // 4. 다음 트랜잭션 함수에 필요한 모든 정보를 반환
     return {
-      transactionInput: transactionInputData as Prisma.CoinTransactionCreateInput,
-      summaryToUpsert,
+      coinSummaryUpsertData,
+      cashSummaryUpsertData,
+      ...createCoinTransactionInput,
+      ...restCleanInput,
     }
   }
 
   private async txCreateCoinTransaction(
-    // cleanCoinTransaction의 반환 타입을 명시하여 타입 안정성 극대화
-    cleanInput: {
-      transactionInput: Prisma.CoinTransactionCreateInput
-      summaryToUpsert: {
+    cleanInput: CreateCoinTransactionInput & {
+      coinSummaryUpsertData: {
         where: Prisma.CoinSummaryWhereUniqueInput
-        create: Prisma.CoinSummaryCreateInput
-        update: Prisma.CoinSummaryUpdateInput
+        create: Prisma.CoinSummaryUncheckedCreateInput
+        update: Prisma.CoinSummaryUncheckedUpdateInput
+      }
+      cashSummaryUpsertData: {
+        where: Prisma.CoinSummaryWhereUniqueInput
+        data: Prisma.CoinSummaryUncheckedUpdateInput
       }
     },
   ) {
     return this.prisma.$transaction(async (prisma) => {
-      // 1. 거래 내역 생성
+      const { coinSummaryUpsertData, cashSummaryUpsertData, ...input } = cleanInput
+
       const coinTransaction = await prisma.coinTransaction.create({
-        data: cleanInput.transactionInput,
+        data: input,
       })
 
-      // 2. 'cleanCoinTransaction'이 완벽하게 준비해준 객체로 upsert 실행
-      // 더 이상 'existSummary.coin'을 사용하지 않으므로 타입 오류가 발생하지 않습니다.
-      await prisma.coinSummary.upsert(cleanInput.summaryToUpsert)
+      await prisma.coinSummary.upsert({
+        where: coinSummaryUpsertData.where,
+        update: coinSummaryUpsertData.update,
+        create: coinSummaryUpsertData.create,
+      })
+
+      await prisma.coinSummary.update({
+        where: cashSummaryUpsertData.where,
+        data: cashSummaryUpsertData.data,
+      })
 
       return coinTransaction
     })
@@ -274,56 +273,89 @@ export class CoinTransactionService {
       accountId: existingCoinTransaction.accountId,
     })
 
+    const { existSummary, ...restCleanInput } = cleanInput
+    const { coin: coinSummary, cash: cashSummary } = existSummary
+
     const sign = cleanInput.type || existingCoinTransaction.type === TransactionType.DEPOSIT ? 1 : -1
     const deleteSign = existingCoinTransaction.type === TransactionType.DEPOSIT ? -1 : 1
 
-    const coinSummary = cleanInput.existSummary.coin
-
-    if (cleanInput.isDelete) {
-      coinSummary.quantity = new Decimal(
-        Number(coinSummary.quantity) + deleteSign * Number(existingCoinTransaction.quantity),
-      )
-      coinSummary.amount = new Decimal(Number(coinSummary.amount) + deleteSign * Number(existingCoinTransaction.amount))
-    } else {
-      coinSummary.quantity = new Decimal(
-        Number(coinSummary.quantity) +
-          sign * Number(cleanInput.quantity) +
-          deleteSign * Number(existingCoinTransaction.quantity),
-      )
-      coinSummary.amount = new Decimal(
-        Number(coinSummary.amount) +
-          sign * Number(cleanInput.amount) +
-          deleteSign * Number(existingCoinTransaction.amount),
-      )
+    const coinSummaryUpdateData: {
+      where: Prisma.CoinSummaryWhereUniqueInput
+      data: Prisma.CoinSummaryUncheckedUpdateInput
+    } = {
+      where: { id: coinSummary.id },
+      data: {},
     }
 
-    return { ...updateCoinTransactionInput, ...cleanInput, existingCoinTransaction }
+    const cashSummaryUpdateData: {
+      where: Prisma.CoinSummaryWhereUniqueInput
+      data: Prisma.CoinSummaryUncheckedUpdateInput
+    } = {
+      where: { id: cashSummary.id },
+      data: {},
+    }
+
+    if (restCleanInput.isDelete) {
+      coinSummaryUpdateData.data = {
+        quantity: {
+          increment: deleteSign * Number(existingCoinTransaction.quantity),
+        },
+        amount: {
+          increment: deleteSign * Number(existingCoinTransaction.amount),
+        },
+      }
+      cashSummaryUpdateData.data = {
+        amount: {
+          increment: -deleteSign * Number(existingCoinTransaction.amount),
+        },
+      }
+    } else {
+      coinSummaryUpdateData.data = {
+        quantity: {
+          increment: sign * Number(restCleanInput.quantity) + deleteSign * Number(existingCoinTransaction.quantity),
+        },
+        amount: {
+          increment: sign * Number(restCleanInput.amount) + deleteSign * Number(existingCoinTransaction.amount),
+        },
+      }
+      cashSummaryUpdateData.data = {
+        amount: {
+          increment: -sign * Number(restCleanInput.amount) - deleteSign * Number(existingCoinTransaction.amount),
+        },
+      }
+    }
+
+    return { ...updateCoinTransactionInput, ...restCleanInput, coinSummaryUpdateData, cashSummaryUpdateData }
   }
 
   private txUpdateCoinTransaction(
     cleanInput: UpdateCoinTransactionInput & {
-      existSummary: { cash: any; coin: any }
-    } & { existingCoinTransaction: any },
+      coinSummaryUpdateData: {
+        where: Prisma.CoinSummaryWhereUniqueInput
+        data: Prisma.CoinSummaryUncheckedUpdateInput
+      }
+      cashSummaryUpdateData: {
+        where: Prisma.CoinSummaryWhereUniqueInput
+        data: Prisma.CoinSummaryUncheckedUpdateInput
+      }
+    },
   ) {
     return this.prisma.$transaction(async (prisma) => {
-      const { existSummary, existingCoinTransaction, ...input } = cleanInput
+      const { coinSummaryUpdateData, cashSummaryUpdateData, ...input } = cleanInput
 
       const coinTransaction = await prisma.coinTransaction.update({
-        where: { id: existingCoinTransaction.id },
+        where: { id: input.id },
         data: input,
       })
 
-      await prisma.coinSummary.upsert({
-        where: {
-          accountId_type_symbol_currency: {
-            accountId: existSummary.coin.accountId,
-            type: existSummary.coin.type,
-            symbol: existSummary.coin.symbol,
-            currency: existSummary.coin.currency,
-          },
-        },
-        update: existSummary.coin,
-        create: existSummary.coin,
+      await prisma.coinSummary.update({
+        where: coinSummaryUpdateData.where,
+        data: coinSummaryUpdateData.data,
+      })
+
+      await prisma.coinSummary.update({
+        where: cashSummaryUpdateData.where,
+        data: cashSummaryUpdateData.data,
       })
 
       return coinTransaction

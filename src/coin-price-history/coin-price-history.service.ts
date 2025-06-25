@@ -19,9 +19,9 @@ export class CoinPriceHistoryService {
 
   async updateCoinPrice() {
     const nestConfig = this.configService.get<NestConfig>("nest")!
-    if (nestConfig.environment === "local") {
-      return
-    }
+    // if (nestConfig.environment === "local") {
+    //   return "Local environment, skipping coin price update."
+    // }
 
     const distinctCoinSymbols = await this.prisma.coinSummary.findMany({
       where: {
@@ -32,14 +32,15 @@ export class CoinPriceHistoryService {
         symbol: true,
         slug: true,
       },
-      distinct: ['symbol', 'slug'],
+      distinct: ["symbol", "slug"],
     })
 
     // const slugsString = distinctCoinSymbols.map((item) => item.slug).join(",")
     const symbolsString = distinctCoinSymbols.map((item) => item.symbol).join(",")
 
     if (symbolsString.length === 0) {
-      return
+      this.logger.warn("No distinct coin symbols found to update.")
+      return "No distinct coin symbols found."
     }
 
     const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
@@ -100,8 +101,8 @@ export class CoinPriceHistoryService {
     // 1. 각 symbol 별로 가장 큰 id (최신 id)를 조회합니다.
     const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>`
       SELECT MAX(id) as max_id
-      FROM coin_price_history 
-      WHERE symbol IN (${symbols.map(s => `'${s}'`).join(',')})
+      FROM coin_price_history
+      WHERE symbol IN (${symbols.map((s) => `'${s}'`).join(",")})
       GROUP BY symbol
     `
 

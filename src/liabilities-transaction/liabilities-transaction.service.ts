@@ -1,13 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common"
-import {
-  AccountType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  parseISOString,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, parseISOString, ValidationException } from "../common"
 import {
   CreateLiabilitiesTransactionInput,
   LiabilitiesTransactionInput,
@@ -16,6 +8,7 @@ import {
 } from "./dto"
 import { PrismaService } from "../common/prisma"
 import { Decimal } from "@prisma/client/runtime/library"
+import { AccountType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class LiabilitiesTransactionService {
@@ -72,7 +65,9 @@ export class LiabilitiesTransactionService {
 
     cleanInput.existSummary.count = Number(cleanInput.existSummary.count) + 1
     cleanInput.existSummary.amount = new Decimal(Number(cleanInput.existSummary.amount) + Number(cleanInput.amount))
-    cleanInput.existSummary.remainingAmount = new Decimal(Number(cleanInput.existSummary.remainingAmount) + Number(cleanInput.remainingAmount))
+    cleanInput.existSummary.remainingAmount = new Decimal(
+      Number(cleanInput.existSummary.remainingAmount) + Number(cleanInput.remainingAmount),
+    )
 
     return { ...createLiabilitiesTransactionInput, ...cleanInput }
   }
@@ -211,12 +206,22 @@ export class LiabilitiesTransactionService {
 
     if (cleanInput.isDelete) {
       cleanInput.existSummary.count = Number(cleanInput.existSummary.count) - 1
-      cleanInput.existSummary.amount = new Decimal(Number(cleanInput.existSummary.amount) - Number(existingLiabilitiesTransaction.amount))
-      cleanInput.existSummary.remainingAmount = new Decimal(Number(cleanInput.existSummary.remainingAmount) - Number(existingLiabilitiesTransaction.remainingAmount))
-    } else {
-      cleanInput.existSummary.amount = new Decimal(Number(cleanInput.existSummary.amount) + Number(cleanInput.amount) - Number(existingLiabilitiesTransaction.amount))
+      cleanInput.existSummary.amount = new Decimal(
+        Number(cleanInput.existSummary.amount) - Number(existingLiabilitiesTransaction.amount),
+      )
       cleanInput.existSummary.remainingAmount = new Decimal(
-        Number(cleanInput.existSummary.remainingAmount) + Number(cleanInput.remainingAmount) - Number(existingLiabilitiesTransaction.remainingAmount)
+        Number(cleanInput.existSummary.remainingAmount) - Number(existingLiabilitiesTransaction.remainingAmount),
+      )
+    } else {
+      cleanInput.existSummary.amount = new Decimal(
+        Number(cleanInput.existSummary.amount) +
+          Number(cleanInput.amount) -
+          Number(existingLiabilitiesTransaction.amount),
+      )
+      cleanInput.existSummary.remainingAmount = new Decimal(
+        Number(cleanInput.existSummary.remainingAmount) +
+          Number(cleanInput.remainingAmount) -
+          Number(existingLiabilitiesTransaction.remainingAmount),
       )
     }
 

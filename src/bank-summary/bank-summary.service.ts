@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common"
-import { AccountType, ErrorMessage, ForbiddenException, JwtPayload, UserRole, ValidationException } from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
 import { PrismaService } from "../common/prisma"
 import { UpdateBankSummaryInput } from "./dto"
+import { AccountType, Prisma, UserRole } from "@prisma/client"
 
 @Injectable()
 export class BankSummaryService {
@@ -38,5 +39,9 @@ export class BankSummaryService {
         data: input,
       })
     })
+  }
+
+  async findBy(where: Prisma.BankSummaryWhereInput) {
+    return this.prisma.bankSummary.findMany({ where })
   }
 }

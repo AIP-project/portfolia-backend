@@ -1,14 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common"
-import {
-  AccountType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  parseISOString,
-  TransactionType,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, parseISOString, ValidationException } from "../common"
 import {
   BankTransactionInput,
   BankTransactionsArgs,
@@ -16,7 +7,7 @@ import {
   UpdateBankTransactionInput,
 } from "./dto"
 import { PrismaService } from "../common/prisma"
-import { Decimal } from "@prisma/client/runtime/library"
+import { AccountType, Prisma, TransactionType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class BankTransactionService {
@@ -49,38 +40,58 @@ export class BankTransactionService {
   }
 
   async createBankTransaction(jwtPayload: JwtPayload, createBankTransactionInput: CreateBankTransactionInput) {
-    const cleanInput = await this.cleanBankTransaction(jwtPayload, createBankTransactionInput)
+    const cleanInput = await this.cleanCreateBankTransaction(jwtPayload, createBankTransactionInput)
     return this.txCreateBankTransaction(cleanInput)
   }
 
-  private async cleanBankTransaction(jwtPayload: JwtPayload, createBankTransactionInput: CreateBankTransactionInput) {
+  private async cleanCreateBankTransaction(
+    jwtPayload: JwtPayload,
+    createBankTransactionInput: CreateBankTransactionInput,
+  ) {
     const cleanInput = await this.commonCheckBankTransaction(jwtPayload, createBankTransactionInput)
 
-    if (cleanInput.type === TransactionType.DEPOSIT) {
-      cleanInput.existSummary.totalDepositAmount = new Decimal(Number(cleanInput.existSummary.totalDepositAmount) + Number(cleanInput.amount))
-      cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) + Number(cleanInput.amount))
-    } else {
-      cleanInput.existSummary.totalWithdrawalAmount = new Decimal(Number(cleanInput.existSummary.totalWithdrawalAmount) + Number(cleanInput.amount))
-      cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) - Number(cleanInput.amount))
+    const { existSummary, ...restCleanInput } = cleanInput
+
+    const sign = cleanInput.type === TransactionType.DEPOSIT ? 1 : -1
+
+    const summaryUpdateData: {
+      where: Prisma.BankSummaryWhereUniqueInput
+      data: Prisma.BankSummaryUncheckedUpdateInput
+    } = {
+      where: { id: existSummary.id },
+      data: {},
     }
 
-    return { ...createBankTransactionInput, ...cleanInput }
+    summaryUpdateData.data = {
+      totalDepositAmount: {
+        increment: cleanInput.type === TransactionType.DEPOSIT ? Number(cleanInput.amount) : 0,
+      },
+      totalWithdrawalAmount: {
+        increment: cleanInput.type === TransactionType.DEPOSIT ? 0 : Number(cleanInput.amount),
+      },
+      balance: {
+        increment: sign * Number(cleanInput.amount),
+      },
+    }
+
+    return { ...createBankTransactionInput, ...restCleanInput, summaryUpdateData }
   }
 
-  private async txCreateBankTransaction(cleanInput: CreateBankTransactionInput & { existSummary: any }) {
+  private async txCreateBankTransaction(
+    cleanInput: CreateBankTransactionInput & {
+      summaryUpdateData: {
+        where: Prisma.BankSummaryWhereUniqueInput
+        data: Prisma.BankSummaryUncheckedUpdateInput
+      }
+    },
+  ) {
     return this.prisma.$transaction(async (prisma) => {
-      const { existSummary, ...input } = cleanInput
+      const { summaryUpdateData, ...input } = cleanInput
       const bankTransaction = await prisma.bankTransaction.create({ data: input })
 
       await prisma.bankSummary.update({
-        where: {
-          accountId: bankTransaction.accountId,
-        },
-        data: {
-          totalDepositAmount: existSummary.totalDepositAmount,
-          totalWithdrawalAmount: existSummary.totalWithdrawalAmount,
-          balance: existSummary.balance,
-        },
+        where: summaryUpdateData.where,
+        data: summaryUpdateData.data,
       })
 
       return bankTransaction
@@ -182,60 +193,94 @@ export class BankTransactionService {
     jwtPayload: JwtPayload,
     updateBankTransactionInput: UpdateBankTransactionInput,
   ) {
+    // 기존 트랜잭션 조회
     const existingBankTransaction = await this.prisma.bankTransaction.findFirst({
       where: { id: updateBankTransactionInput.id, isDelete: false },
     })
+
     if (!existingBankTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_BANK_TRANSACTION)
 
+    // 공통 체크 수행
     const cleanInput = await this.commonCheckBankTransaction(jwtPayload, {
       ...updateBankTransactionInput,
       accountId: existingBankTransaction.accountId,
     })
 
+    const { existSummary, ...restCleanInput } = cleanInput
+
+    // create와 동일한 구조로 summaryUpdateData 생성
+    const summaryUpdateData: {
+      where: Prisma.BankSummaryWhereUniqueInput
+      data: Prisma.BankSummaryUncheckedUpdateInput
+    } = {
+      where: { id: existSummary.id },
+      data: {},
+    }
+
+    // 기존 트랜잭션 타입과 금액
+    const oldType = existingBankTransaction.type
+    const oldAmount = Number(existingBankTransaction.amount)
+    const newType = cleanInput.type || oldType // 타입이 없으면 기존 타입 유지
+    const newAmount = Number(cleanInput.amount)
+
     if (cleanInput.isDelete) {
-      if (existingBankTransaction.type === TransactionType.DEPOSIT) {
-        cleanInput.existSummary.totalDepositAmount = new Decimal(Number(cleanInput.existSummary.totalDepositAmount) - Number(existingBankTransaction.amount))
-        cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) - Number(existingBankTransaction.amount))
-      } else {
-        cleanInput.existSummary.totalWithdrawalAmount = new Decimal(Number(cleanInput.existSummary.totalWithdrawalAmount) - Number(existingBankTransaction.amount))
-        cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) + Number(existingBankTransaction.amount))
+      // 삭제 케이스: 기존 트랜잭션만 롤백
+      summaryUpdateData.data = {
+        totalDepositAmount: {
+          increment: oldType === TransactionType.DEPOSIT ? -oldAmount : 0,
+        },
+        totalWithdrawalAmount: {
+          increment: oldType === TransactionType.DEPOSIT ? 0 : -oldAmount,
+        },
+        balance: {
+          increment: oldType === TransactionType.DEPOSIT ? -oldAmount : oldAmount,
+        },
       }
     } else {
-      if (cleanInput.type === TransactionType.DEPOSIT) {
-        cleanInput.existSummary.totalDepositAmount = new Decimal(Number(cleanInput.existSummary.totalDepositAmount) + Number(cleanInput.amount) - Number(existingBankTransaction.amount))
-        cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) + Number(cleanInput.amount) - Number(existingBankTransaction.amount))
-      } else {
-        cleanInput.existSummary.totalWithdrawalAmount = new Decimal(Number(cleanInput.existSummary.totalWithdrawalAmount) + Number(cleanInput.amount) - Number(existingBankTransaction.amount))
-        cleanInput.existSummary.balance = new Decimal(Number(cleanInput.existSummary.balance) - Number(cleanInput.amount) + Number(existingBankTransaction.amount))
+      // 업데이트 케이스
+      summaryUpdateData.data = {
+        totalDepositAmount: {
+          increment: newType === TransactionType.DEPOSIT ? newAmount - oldAmount : 0,
+        },
+        totalWithdrawalAmount: {
+          increment: newType === TransactionType.DEPOSIT ? 0 : newAmount - oldAmount,
+        },
+        balance: {
+          increment: newType === TransactionType.DEPOSIT ? newAmount - oldAmount : -newAmount + oldAmount,
+        },
       }
     }
 
-    return { ...updateBankTransactionInput, ...cleanInput, existingBankTransaction }
+    return {
+      ...updateBankTransactionInput,
+      ...restCleanInput,
+      summaryUpdateData,
+    }
   }
 
   private async txUpdateBankTransaction(
-    cleanInput: UpdateBankTransactionInput & { existingBankTransaction: any } & {
-      existSummary: any
+    cleanInput: UpdateBankTransactionInput & {
+      summaryUpdateData: {
+        where: Prisma.BankSummaryWhereUniqueInput
+        data: Prisma.BankSummaryUncheckedUpdateInput
+      }
     },
   ) {
     return this.prisma.$transaction(async (prisma) => {
-      const { existingBankTransaction, existSummary, ...input } = cleanInput
+      const { summaryUpdateData, ...input } = cleanInput
 
+      // 1. Bank Transaction 업데이트
       const bankTransaction = await prisma.bankTransaction.update({
-        where: { id: existingBankTransaction.id },
+        where: { id: input.id },
         data: input,
       })
 
+      // 2. Bank Summary 업데이트 (increment 사용)
       await prisma.bankSummary.update({
-        where: {
-          accountId: bankTransaction.accountId,
-        },
-        data: {
-          totalDepositAmount: existSummary.totalDepositAmount,
-          totalWithdrawalAmount: existSummary.totalWithdrawalAmount,
-          balance: existSummary.balance,
-        },
+        where: summaryUpdateData.where,
+        data: summaryUpdateData.data,
       })
+
       return bankTransaction
     })
   }

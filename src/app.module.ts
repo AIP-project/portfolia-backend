@@ -28,6 +28,7 @@ import { LiabilitiesSummaryModule } from "./liabilities-summary/liabilities-summ
 import { DistributeLockModule } from "./common/service/distributeLock"
 import { RedisModule, RedisModuleOptions } from "@nestjs-modules/ioredis"
 import { GqlConfigService } from "./common/config/gql-config.service"
+import { PrismaModule } from "./common/prisma"
 
 @Module({
   imports: [
@@ -44,7 +45,6 @@ import { GqlConfigService } from "./common/config/gql-config.service"
       useFactory: (configService: ConfigService) => createWinstonConfig(configService),
     }),
 
-
     RedisModule.forRootAsync({
       inject: [ConfigService],
       useFactory: async (configService: ConfigService): Promise<RedisModuleOptions> => {
@@ -60,6 +60,7 @@ import { GqlConfigService } from "./common/config/gql-config.service"
       },
     }),
 
+    PrismaModule,
     TerminusModule,
     ScheduleModule.forRoot(),
 

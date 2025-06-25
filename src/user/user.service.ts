@@ -11,13 +11,12 @@ import {
   passwordRuleCheck,
   PasswordService,
   TokenType,
-  UserRole,
   ValidationException,
 } from "../common"
-import { UserState } from "../common/enum/user-state.enum"
 import { SignInInput, SignUpInput, UpdateUserInput, UsersArgs } from "./dto"
 import { CommonInput } from "../common/dto/common.input"
 import { PrismaService } from "../common/prisma"
+import { UserRole, UserState } from "@prisma/client"
 
 @Injectable()
 export class UserService {
@@ -61,9 +60,9 @@ export class UserService {
     return { ...signUpInput, ...cleanInput }
   }
 
-  private async txSignUp(signInInput: SignInInput) {
+  private async txSignUp(signUpInput: SignUpInput) {
     return this.prisma.user.create({
-      data: signInInput,
+      data: signUpInput,
     })
   }
 
