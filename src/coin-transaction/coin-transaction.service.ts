@@ -1,36 +1,20 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { FindOptionsWhere, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from "typeorm"
-import { Account } from "../account/entities/account.entity"
-import {
-  AccountType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  parseISOString,
-  SummaryType,
-  TransactionType,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, parseISOString, ValidationException } from "../common"
 import {
   CoinTransactionInput,
   CoinTransactionsArgs,
   CreateCoinTransactionInput,
   UpdateCoinTransactionInput,
 } from "./dto"
-import { CoinTransaction } from "./entities"
-import { CoinSummary } from "../coin-summary/entities"
+import { PrismaService } from "../common/prisma"
+import { Decimal } from "@prisma/client/runtime/library"
+import { AccountType, Prisma, SummaryType, TransactionType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class CoinTransactionService {
   private readonly logger = new Logger(CoinTransactionService.name)
 
-  constructor(
-    @InjectRepository(CoinTransaction) private readonly coinTransactionRepository: Repository<CoinTransaction>,
-    @InjectRepository(CoinSummary) private readonly coinSummaryRepository: Repository<CoinSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private async commonCheckCoinTransaction(jwtPayload: JwtPayload, coinTransactionInput: CoinTransactionInput) {
     const cleanInput = new CoinTransactionInput()
@@ -42,22 +26,22 @@ export class CoinTransactionService {
 
     if (coinTransactionInput.transactionDate) parseISOString(coinTransactionInput.transactionDate)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: coinTransactionInput.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (existingAccount.type !== AccountType.COIN) throw new ValidationException(ErrorMessage.MSG_NOT_COIN_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
-    if (!coinTransactionInput.currency) cleanInput.currency = existingAccount.currency
 
-    const existCashSummary = await this.coinSummaryRepository.findOne({
+    const existCashSummary = await this.prisma.coinSummary.findFirst({
       where: { accountId: coinTransactionInput.accountId, type: SummaryType.CASH, isDelete: false },
     })
 
     if (!existCashSummary) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_COIN_SUMMARY)
+    cleanInput.currency = existCashSummary.currency
 
-    const existCoinSummary = await this.coinSummaryRepository.findOne({
+    const existCoinSummary = await this.prisma.coinSummary.findFirst({
       where: {
         accountId: coinTransactionInput.accountId,
         type: SummaryType.SUMMARY,
@@ -68,7 +52,7 @@ export class CoinTransactionService {
     })
 
     if (existCoinSummary) {
-      cleanInput.name = existCoinSummary.name
+      cleanInput.name = coinTransactionInput.name
     }
 
     const existSummary = {
@@ -84,47 +68,98 @@ export class CoinTransactionService {
   }
 
   async createCoinTransaction(jwtPayload: JwtPayload, createCoinTransactionInput: CreateCoinTransactionInput) {
-    const cleanInput = await this.cleanCoinTransaction(jwtPayload, createCoinTransactionInput)
+    const cleanInput = await this.cleanCreateCoinTransaction(jwtPayload, createCoinTransactionInput)
     return this.txCreateCoinTransaction(cleanInput)
   }
 
-  private async cleanCoinTransaction(jwtPayload: JwtPayload, createCoinTransactionInput: CreateCoinTransactionInput) {
+  private async cleanCreateCoinTransaction(
+    jwtPayload: JwtPayload,
+    createCoinTransactionInput: CreateCoinTransactionInput,
+  ) {
     const cleanInput = await this.commonCheckCoinTransaction(jwtPayload, createCoinTransactionInput)
+
+    const { existSummary, ...restCleanInput } = cleanInput
+    const { coin: coinSummary, cash: cashSummary } = existSummary
 
     const sign = cleanInput.type === TransactionType.DEPOSIT ? 1 : -1
 
-    const coinSummary = cleanInput.existSummary.coin
-
-    if (coinSummary) {
-      coinSummary.quantity = coinSummary.quantity + sign * cleanInput.quantity
-      coinSummary.amount = coinSummary.amount + sign * cleanInput.amount
-    } else {
-      cleanInput.existSummary.coin = {
-        name: cleanInput.name,
-        symbol: cleanInput.symbol,
-        slug: cleanInput.slug,
-        quantity: sign * cleanInput.quantity,
-        currency: cleanInput.currency,
-        amount: sign * cleanInput.amount,
+    const coinSummaryUpsertData: {
+      where: Prisma.CoinSummaryWhereUniqueInput
+      create: Prisma.CoinSummaryUncheckedCreateInput
+      update: Prisma.CoinSummaryUncheckedUpdateInput
+    } = {
+      where: { id: coinSummary?.id || -1 },
+      create: {
+        accountId: restCleanInput.accountId,
         type: SummaryType.SUMMARY,
-        accountId: cleanInput.accountId,
-      }
+        symbol: restCleanInput.symbol,
+        name: restCleanInput.name,
+        slug: restCleanInput.slug,
+        currency: restCleanInput.currency || cashSummary.currency, // currency 추가
+        quantity: new Decimal(sign * Number(restCleanInput.quantity)),
+        amount: new Decimal(sign * Number(restCleanInput.amount)),
+      },
+      update: {
+        name: restCleanInput.name,
+        quantity: {
+          increment: sign * Number(restCleanInput.quantity),
+        },
+        amount: {
+          increment: sign * Number(restCleanInput.amount),
+        },
+      },
     }
 
-    return { ...createCoinTransactionInput, ...cleanInput }
+    const cashSummaryUpsertData: {
+      where: Prisma.CoinSummaryWhereUniqueInput
+      data: Prisma.CoinSummaryUncheckedUpdateInput
+    } = {
+      where: { id: cashSummary.id },
+      data: {
+        amount: {
+          increment: -sign * Number(restCleanInput.amount),
+        },
+      },
+    }
+
+    return {
+      coinSummaryUpsertData,
+      cashSummaryUpsertData,
+      ...createCoinTransactionInput,
+      ...restCleanInput,
+    }
   }
 
   private async txCreateCoinTransaction(
     cleanInput: CreateCoinTransactionInput & {
-      existSummary: { cash: any; coin: any }
+      coinSummaryUpsertData: {
+        where: Prisma.CoinSummaryWhereUniqueInput
+        create: Prisma.CoinSummaryUncheckedCreateInput
+        update: Prisma.CoinSummaryUncheckedUpdateInput
+      }
+      cashSummaryUpsertData: {
+        where: Prisma.CoinSummaryWhereUniqueInput
+        data: Prisma.CoinSummaryUncheckedUpdateInput
+      }
     },
   ) {
-    return this.coinTransactionRepository.manager.transaction(async (manager) => {
-      const { existSummary, ...input } = cleanInput
+    return this.prisma.$transaction(async (prisma) => {
+      const { coinSummaryUpsertData, cashSummaryUpsertData, ...input } = cleanInput
 
-      const coinTransaction = await manager.save(CoinTransaction, input)
+      const coinTransaction = await prisma.coinTransaction.create({
+        data: input,
+      })
 
-      await manager.upsert(CoinSummary, existSummary.coin, ["accountId", "type", "symbol", "currency"])
+      await prisma.coinSummary.upsert({
+        where: coinSummaryUpsertData.where,
+        update: coinSummaryUpsertData.update,
+        create: coinSummaryUpsertData.create,
+      })
+
+      await prisma.coinSummary.update({
+        where: cashSummaryUpsertData.where,
+        data: cashSummaryUpsertData.data,
+      })
 
       return coinTransaction
     })
@@ -145,43 +180,50 @@ export class CoinTransactionService {
     } = coinTransactionsArgs
     const skip = (page - 1) * take
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const whereConditions: FindOptionsWhere<CoinTransaction> = {
+    const whereConditions: any = {
       isDelete: false,
       accountId,
     }
 
-    if (name) whereConditions.name = ILike(`%${name}%`)
-    if (note) whereConditions.note = ILike(`%${note}%`)
+    if (name) whereConditions.name = { contains: name }
+    if (note) whereConditions.note = { contains: note }
     if (type) whereConditions.type = type
     if (symbol) whereConditions.symbol = symbol
-    if (fromTransactionDate) whereConditions.transactionDate = MoreThanOrEqual(new Date(fromTransactionDate))
-    if (toTransactionDate) whereConditions.transactionDate = LessThanOrEqual(new Date(toTransactionDate))
+    if (fromTransactionDate && toTransactionDate) {
+      whereConditions.transactionDate = {
+        gte: new Date(fromTransactionDate),
+        lte: new Date(toTransactionDate),
+      }
+    } else if (fromTransactionDate) {
+      whereConditions.transactionDate = { gte: new Date(fromTransactionDate) }
+    } else if (toTransactionDate) {
+      whereConditions.transactionDate = { lte: new Date(toTransactionDate) }
+    }
 
     // Order by 설정
-    const order =
+    const orderBy =
       sortBy.length > 0
-        ? sortBy.reduce(
-            (acc, { field, direction }) => ({
-              ...acc,
-              [field]: direction ? "ASC" : "DESC",
-            }),
-            {},
-          )
-        : { createdAt: "ASC" } // 기본 정렬
+        ? sortBy.map(({ field, direction }) => ({
+            [field]: direction ? "asc" : "desc",
+          }))
+        : [{ createdAt: "asc" }] // 기본 정렬
 
-    const [coinTransactions, total] = await this.coinTransactionRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [coinTransactions, total] = await Promise.all([
+      this.prisma.coinTransaction.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.coinTransaction.count({ where: whereConditions }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
@@ -198,10 +240,10 @@ export class CoinTransactionService {
   }
 
   async coinTransaction(jwtPayload: JwtPayload, id: number) {
-    const coinTransaction = await this.coinTransactionRepository.findOne({ where: { id: id, isDelete: false } })
+    const coinTransaction = await this.prisma.coinTransaction.findFirst({ where: { id: id, isDelete: false } })
     if (!coinTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_COIN_TRANSACTION)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: coinTransaction.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -220,7 +262,7 @@ export class CoinTransactionService {
     jwtPayload: JwtPayload,
     updateCoinTransactionInput: UpdateCoinTransactionInput,
   ) {
-    const existingCoinTransaction = await this.coinTransactionRepository.findOne({
+    const existingCoinTransaction = await this.prisma.coinTransaction.findFirst({
       where: { id: updateCoinTransactionInput.id, isDelete: false },
     })
     if (!existingCoinTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_COIN_TRANSACTION)
@@ -231,36 +273,90 @@ export class CoinTransactionService {
       accountId: existingCoinTransaction.accountId,
     })
 
+    const { existSummary, ...restCleanInput } = cleanInput
+    const { coin: coinSummary, cash: cashSummary } = existSummary
+
     const sign = cleanInput.type || existingCoinTransaction.type === TransactionType.DEPOSIT ? 1 : -1
     const deleteSign = existingCoinTransaction.type === TransactionType.DEPOSIT ? -1 : 1
 
-    const coinSummary = cleanInput.existSummary.coin
-
-    if (cleanInput.isDelete) {
-      coinSummary.quantity = coinSummary.quantity + deleteSign * existingCoinTransaction.quantity
-      coinSummary.amount = coinSummary.amount + deleteSign * existingCoinTransaction.amount
-    } else {
-      coinSummary.quantity =
-        coinSummary.quantity + sign * cleanInput.quantity + deleteSign * existingCoinTransaction.quantity
-      coinSummary.amount = coinSummary.amount + sign * cleanInput.amount + deleteSign * existingCoinTransaction.amount
+    const coinSummaryUpdateData: {
+      where: Prisma.CoinSummaryWhereUniqueInput
+      data: Prisma.CoinSummaryUncheckedUpdateInput
+    } = {
+      where: { id: coinSummary.id },
+      data: {},
     }
 
-    return { ...updateCoinTransactionInput, ...cleanInput, existingCoinTransaction }
+    const cashSummaryUpdateData: {
+      where: Prisma.CoinSummaryWhereUniqueInput
+      data: Prisma.CoinSummaryUncheckedUpdateInput
+    } = {
+      where: { id: cashSummary.id },
+      data: {},
+    }
+
+    if (restCleanInput.isDelete) {
+      coinSummaryUpdateData.data = {
+        quantity: {
+          increment: deleteSign * Number(existingCoinTransaction.quantity),
+        },
+        amount: {
+          increment: deleteSign * Number(existingCoinTransaction.amount),
+        },
+      }
+      cashSummaryUpdateData.data = {
+        amount: {
+          increment: -deleteSign * Number(existingCoinTransaction.amount),
+        },
+      }
+    } else {
+      coinSummaryUpdateData.data = {
+        quantity: {
+          increment: sign * Number(restCleanInput.quantity) + deleteSign * Number(existingCoinTransaction.quantity),
+        },
+        amount: {
+          increment: sign * Number(restCleanInput.amount) + deleteSign * Number(existingCoinTransaction.amount),
+        },
+      }
+      cashSummaryUpdateData.data = {
+        amount: {
+          increment: -sign * Number(restCleanInput.amount) - deleteSign * Number(existingCoinTransaction.amount),
+        },
+      }
+    }
+
+    return { ...updateCoinTransactionInput, ...restCleanInput, coinSummaryUpdateData, cashSummaryUpdateData }
   }
 
   private txUpdateCoinTransaction(
     cleanInput: UpdateCoinTransactionInput & {
-      existSummary: { cash: any; coin: any }
-    } & { existingCoinTransaction: CoinTransaction },
+      coinSummaryUpdateData: {
+        where: Prisma.CoinSummaryWhereUniqueInput
+        data: Prisma.CoinSummaryUncheckedUpdateInput
+      }
+      cashSummaryUpdateData: {
+        where: Prisma.CoinSummaryWhereUniqueInput
+        data: Prisma.CoinSummaryUncheckedUpdateInput
+      }
+    },
   ) {
-    return this.coinTransactionRepository.manager.transaction(async (manager) => {
-      const { existSummary, existingCoinTransaction, ...input } = cleanInput
+    return this.prisma.$transaction(async (prisma) => {
+      const { coinSummaryUpdateData, cashSummaryUpdateData, ...input } = cleanInput
 
-      const updatedCoinTransaction = manager.merge(CoinTransaction, existingCoinTransaction, input)
+      const coinTransaction = await prisma.coinTransaction.update({
+        where: { id: input.id },
+        data: input,
+      })
 
-      const coinTransaction = await manager.save(CoinTransaction, updatedCoinTransaction)
+      await prisma.coinSummary.update({
+        where: coinSummaryUpdateData.where,
+        data: coinSummaryUpdateData.data,
+      })
 
-      await manager.upsert(CoinSummary, existSummary.coin, ["accountId", "type", "symbol", "currency"])
+      await prisma.coinSummary.update({
+        where: cashSummaryUpdateData.where,
+        data: cashSummaryUpdateData.data,
+      })
 
       return coinTransaction
     })

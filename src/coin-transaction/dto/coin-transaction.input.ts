@@ -1,7 +1,6 @@
 import { Field, Float, InputType } from "@nestjs/graphql"
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, MinLength } from "class-validator"
-import { CurrencyType, TransactionType } from "../../common"
-import { Column } from "typeorm"
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from "class-validator"
+import { CurrencyType, TransactionType } from "@prisma/client"
 
 @InputType()
 export class CoinTransactionInput {
@@ -18,11 +17,11 @@ export class CoinTransactionInput {
   @Field({ description: "코인 심볼", nullable: true })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   symbol?: string
 
   @Field({ description: "코인 유니크 키", nullable: true })
-  @Column({ nullable: true })
+  @IsOptional()
+  @IsString()
   slug?: string
 
   @Field(() => Float, { description: "코인 수량", nullable: true })

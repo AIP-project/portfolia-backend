@@ -1,10 +1,10 @@
 import { Injectable, Scope } from "@nestjs/common"
 import * as DataLoader from "dataloader"
-import { CoinPriceHistory } from "./entities"
+import { CoinPriceHistory } from "./dto"
 import { CoinPriceHistoryService } from "./coin-price-history.service"
 
 @Injectable({ scope: Scope.REQUEST })
-export class CoinPriceDataloader {
+export class CoinPriceDataLoader {
   constructor(private readonly coinPriceHistoryService: CoinPriceHistoryService) {}
 
   public readonly coinPriceBySymbols = new DataLoader<string, CoinPriceHistory | null>(async (symbols: string[]) => {

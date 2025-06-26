@@ -1,4 +1,4 @@
-import { CurrencyType, UserRole } from "../enum"
+import { CurrencyType, UserRole } from "@prisma/client"
 
 export class JwtPayload {
   id: number

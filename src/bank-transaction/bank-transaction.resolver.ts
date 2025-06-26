@@ -2,7 +2,7 @@ import { Args, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/g
 import { JwtPayload, parseISOString, UserDecoded } from "../common"
 import { BankTransactionService } from "./bank-transaction.service"
 import { BankTransactions, BankTransactionsArgs, CreateBankTransactionInput, UpdateBankTransactionInput } from "./dto"
-import { BankTransaction } from "./entities"
+import { BankTransaction } from "./dto/bank-transaction.model"
 
 @Resolver(() => BankTransaction)
 export class BankTransactionResolver {

@@ -1,6 +1,6 @@
 import { Field, InputType } from "@nestjs/graphql"
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, MinLength } from "class-validator"
-import { AccountType, CurrencyType } from "../../common"
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from "class-validator"
+import { AccountType, CurrencyType } from "@prisma/client"
 
 @InputType({ description: "계좌 입력 타입" })
 export class AccountInput {
@@ -12,7 +12,6 @@ export class AccountInput {
   @Field({ nullable: true, description: "계좌 별칭" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   nickName?: string
 
   @Field(() => AccountType, { nullable: true, description: "계좌 타입" })

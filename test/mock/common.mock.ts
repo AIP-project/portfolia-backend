@@ -1,32 +1,108 @@
-export const mockEntityManager = {
-  transaction: jest.fn(),
-  save: jest.fn(),
-  findOne: jest.fn(),
-  merge: jest.fn(),
-  find: jest.fn(),
-}
-
-export const createMockRepository = () => ({
-  exists: jest.fn(),
-  find: jest.fn(),
-  findOne: jest.fn(),
-  findAndCount: jest.fn(),
-  manager: mockEntityManager,
+export const createMockPrismaService = () => ({
+  user: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    count: jest.fn(),
+  },
+  account: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    count: jest.fn(),
+  },
+  bankSummary: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  stockSummary: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  coinSummary: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  etcSummary: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  liabilitiesSummary: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  bankTransaction: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  stockTransaction: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  coinTransaction: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  etcTransaction: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  liabilitiesTransaction: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  exchangeRate: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+  },
+  coinPriceHistory: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+  },
+  stockPriceHistory: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+  },
+  $transaction: jest.fn(),
+  $queryRaw: jest.fn(),
 })
 
 export const resetAllMocks = () => {
   jest.clearAllMocks()
-
-  // EntityManager 모의 초기화
-  mockEntityManager.transaction.mockReset()
-  mockEntityManager.save.mockReset()
-  mockEntityManager.findOne.mockReset()
-  mockEntityManager.merge.mockReset()
-
-  // 트랜잭션 기본 구현 설정
-  mockEntityManager.transaction.mockImplementation(async (cb) => {
-    return cb(mockEntityManager)
-  })
 }
 
 export const createMockPasswordService = () => ({

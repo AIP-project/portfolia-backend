@@ -1,12 +1,11 @@
 import { Field, Float, InputType, OmitType } from "@nestjs/graphql"
 import { LiabilitiesTransactionInput } from "./liabilities-transaction.input"
-import { IsNumber, IsString, MinLength } from "class-validator"
+import { IsNumber, IsString } from "class-validator"
 
 @InputType()
 export class CreateLiabilitiesTransactionInput extends OmitType(LiabilitiesTransactionInput, ["id"]) {
   @Field({ nullable: false })
   @IsString()
-  @MinLength(2)
   name!: string
 
   @Field(() => Float, { nullable: false })

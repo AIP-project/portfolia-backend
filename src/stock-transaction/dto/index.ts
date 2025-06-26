@@ -1,5 +1,6 @@
 export * from "./stock-transaction.input"
 export * from "./stock-transactions.args"
 export * from "./stock-transactions.model"
+export * from "./stock-transaction.model"
 export * from "./create-stock-transaction.input"
 export * from "./update-stock-transaction.input"

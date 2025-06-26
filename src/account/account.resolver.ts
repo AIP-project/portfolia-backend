@@ -1,17 +1,28 @@
 import { Args, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { JwtPayload, UserDecoded } from "../common"
 import { AccountService } from "./account.service"
-import { Account } from "./entities/account.entity"
-import { Accounts, AccountsArgs, Allocation, CreateAccountInput, Dashboard, UpdateAccountInput } from "./dto"
-import { BankSummary } from "../bank-summary/entities"
-import { EtcSummary } from "../etc-summary/entities"
-import { LiabilitiesSummary } from "../liabilities-summary/entities"
-import { StockSummary } from "../stock-summary/entities"
-import { CoinSummary } from "../coin-summary/entities"
+import { Account, Accounts, AccountsArgs, Allocation, CreateAccountInput, Dashboard, UpdateAccountInput } from "./dto"
+import { StockSummaryDataLoader } from "../stock-summary/stock-summary.dataloader"
+import { BankSummary } from "../bank-summary/dto"
+import { CoinSummary } from "../coin-summary/dto"
+import { StockSummary } from "../stock-summary/dto"
+import { EtcSummary } from "../etc-summary/dto"
+import { LiabilitiesSummary } from "../liabilities-summary/dto"
+import { CoinSummaryDataLoader } from "../coin-summary/coin-summary.dataloader"
+import { BankSummaryDataLoader } from "../bank-summary/bank-summary.dataloader"
+import { EtcSummaryDataLoader } from "../etc-summary/etc-summary.dataloader"
+import { LiabilitiesSummaryDataLoader } from "../liabilities-summary/liabilities-summary.dataloader"
 
 @Resolver(() => Account)
 export class AccountResolver {
-  constructor(private readonly accountService: AccountService) {}
+  constructor(
+    private readonly accountService: AccountService,
+    private readonly bankSummaryDataLoader: BankSummaryDataLoader,
+    private readonly stockSummaryDataLoader: StockSummaryDataLoader,
+    private readonly coinSummaryDataLoader: CoinSummaryDataLoader,
+    private readonly etcSummaryDataLoader: EtcSummaryDataLoader,
+    private readonly liabilitiesSummaryDataLoader: LiabilitiesSummaryDataLoader,
+  ) {}
 
   @Mutation(() => Account, { description: "계좌 생성" })
   async createAccount(@UserDecoded() jwtPayload: JwtPayload, @Args("input") createAccountInput: CreateAccountInput) {
@@ -34,28 +45,28 @@ export class AccountResolver {
   }
 
   @ResolveField("bankSummary", () => BankSummary, { nullable: true, description: "은행 요약 정보" })
-  async resolveBankSummary(@UserDecoded() payload: JwtPayload, @Parent() account: Account) {
-    return this.accountService.resolveBankSummary(payload, account)
+  async resolveBankSummary(@Parent() account: Account) {
+    return this.bankSummaryDataLoader.bankSummaryByAccountIdsAndCashType.load(account.id)
   }
 
   @ResolveField("stockSummary", () => StockSummary, { nullable: true, description: "주식 요약 정보" })
-  async resolveStockSummary(@UserDecoded() payload: JwtPayload, @Parent() account: Account) {
-    return this.accountService.resolveStockSummary(payload, account)
+  async resolveStockSummary(@Parent() account: Account) {
+    return this.stockSummaryDataLoader.stockSummaryByAccountIdsAndCashType.load(account.id)
   }
 
   @ResolveField("coinSummary", () => CoinSummary, { nullable: true, description: "코인 요약 정보" })
-  async resolveCoinSummary(@UserDecoded() payload: JwtPayload, @Parent() account: Account) {
-    return this.accountService.resolveCoinSummary(payload, account)
+  async resolveCoinSummary(@Parent() account: Account) {
+    return this.coinSummaryDataLoader.coinSummaryByAccountIdsAndCashType.load(account.id)
   }
 
   @ResolveField("etcSummary", () => EtcSummary, { nullable: true, description: "기타 요약 정보" })
-  async resolveEtcSummary(@UserDecoded() payload: JwtPayload, @Parent() account: Account) {
-    return this.accountService.resolveEtcSummary(payload, account)
+  async resolveEtcSummary(@Parent() account: Account) {
+    return this.etcSummaryDataLoader.etcSummaryByAccountIdsAndCashType.load(account.id)
   }
 
   @ResolveField("liabilitiesSummary", () => LiabilitiesSummary, { nullable: true, description: "부채 요약 정보" })
-  async resolveLiabilitiesSummary(@UserDecoded() payload: JwtPayload, @Parent() account: Account) {
-    return this.accountService.resolveLiabilitiesSummary(payload, account)
+  async resolveLiabilitiesSummary(@Parent() account: Account) {
+    return this.liabilitiesSummaryDataLoader.liabilitiesSummaryByAccountIdsAndCashType.load(account.id)
   }
 
   @Query(() => Dashboard, { description: "대시보드 정보" })

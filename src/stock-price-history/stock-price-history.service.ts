@@ -1,42 +1,55 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
-import { StockSummary } from "../stock-summary/entities"
 import { HttpService } from "@nestjs/axios"
 import { ConfigService } from "@nestjs/config"
-import { StockPriceHistory } from "./entities"
 import { firstValueFrom } from "rxjs"
 import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
-import { ExternalServiceException, InterfaceConfig } from "../common"
+import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
+import { PrismaService } from "../common/prisma"
 
 @Injectable()
 export class StockPriceHistoryService {
   private readonly logger = new Logger(StockPriceHistoryService.name)
 
   constructor(
-    @InjectRepository(StockPriceHistory) private readonly stockPriceHistoryRepository: Repository<StockPriceHistory>,
-    @InjectRepository(StockSummary) private readonly stockSummaryRepository: Repository<StockSummary>,
+    private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {}
 
   async updateStockPrice() {
-    const distinctStockGroups = await this.stockSummaryRepository
-      .createQueryBuilder("stockSummary")
-      .select("stockSummary.symbol", "symbol")
-      .addSelect("stockSummary.stockCompanyCode", "stockCompanyCode")
-      .where("stockSummary.type = :type", { type: "SUMMARY" })
-      .andWhere("stockSummary.isDelete = :isDelete", { isDelete: false })
-      .groupBy("stockSummary.symbol")
-      .addGroupBy("stockSummary.stockCompanyCode")
-      .getRawMany()
+    const nestConfig = this.configService.get<NestConfig>("nest")!
+    if (nestConfig.environment === "local") {
+      return "Local environment, skipping stock price update."
+    }
+
+    const distinctStockGroups = await this.prisma.stockSummary.findMany({
+      where: {
+        type: "SUMMARY",
+        isDelete: false,
+      },
+      select: {
+        symbol: true,
+        stockCompanyCode: true,
+      },
+      distinct: ["symbol", "stockCompanyCode"],
+    })
+
+    if (distinctStockGroups.length === 0) {
+      this.logger.warn("No distinct stock groups found to update.")
+      return "No distinct stock groups found."
+    }
 
     const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
 
     const bulkStockPriceHistory = []
 
     for (const distinctStockGroup of distinctStockGroups) {
+      if (!distinctStockGroup.stockCompanyCode) {
+        this.logger.warn(`No stock company code found for symbol "${distinctStockGroup.symbol}"`)
+        continue
+      }
+
       const url = `${interfaceConfig.stockPriceApiUrl}${distinctStockGroup.stockCompanyCode}`
       const stockInfo = await firstValueFrom(
         this.httpService.get(url).pipe(
@@ -59,24 +72,37 @@ export class StockPriceHistoryService {
       })
     }
 
-    await this.stockPriceHistoryRepository.save(bulkStockPriceHistory)
+    await this.prisma.stockPriceHistory.createMany({
+      data: bulkStockPriceHistory,
+    })
 
     return "success"
   }
 
   async findBySymbols(symbols: string[]) {
-    return this.stockPriceHistoryRepository
-      .createQueryBuilder("sph")
-      .where("sph.symbol IN (:...symbols)", { symbols })
-      .andWhere((qb) => {
-        const subQuery = qb
-          .subQuery()
-          .select("MAX(s.id)")
-          .from(StockPriceHistory, "s")
-          .where("s.symbol = sph.symbol")
-          .getQuery()
-        return "sph.id = " + subQuery
-      })
-      .getMany()
+    if (!symbols || symbols.length === 0) {
+      return []
+    }
+
+    const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>`
+      SELECT MAX(id) as max_id
+      FROM stock_price_history
+      WHERE symbol IN (${symbols.map((s) => `'${s}'`).join(",")})
+      GROUP BY symbol
+    `
+
+    if (maxIdsResult.length === 0) {
+      return []
+    }
+
+    const latestIds = maxIdsResult.map((result) => result.max_id)
+
+    return this.prisma.stockPriceHistory.findMany({
+      where: {
+        id: {
+          in: latestIds,
+        },
+      },
+    })
   }
 }

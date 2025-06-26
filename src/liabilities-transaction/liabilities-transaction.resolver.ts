@@ -7,7 +7,8 @@ import {
   UpdateLiabilitiesTransactionInput,
 } from "./dto"
 import { LiabilitiesTransactionService } from "./liabilities-transaction.service"
-import { LiabilitiesTransaction } from "./entities"
+import { LiabilitiesTransaction } from "./dto/liabilities-transaction.model"
+import { EtcTransaction } from "../etc-transaction/dto/etc-transaction.model"
 
 @Resolver(() => LiabilitiesTransaction)
 export class LiabilitiesTransactionResolver {
@@ -51,5 +52,10 @@ export class LiabilitiesTransactionResolver {
   @ResolveField("transactionDate", () => Date, { nullable: true, description: "거래 일자" })
   async resolveTransactionDate(@Parent() liabilitiesTransaction: LiabilitiesTransaction) {
     return parseISOString(liabilitiesTransaction.transactionDate)
+  }
+
+  @ResolveField("repaymentDate", () => Date, { nullable: true, description: "상환 일자" })
+  async resolveRepaymentDate(@Parent() etcTransaction: EtcTransaction) {
+    return parseISOString(etcTransaction.transactionDate)
   }
 }

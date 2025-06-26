@@ -1,6 +1,7 @@
 import { ArgsType, Field } from "@nestjs/graphql"
 import { IsNumber, IsOptional, IsString } from "class-validator"
-import { AccountType, CurrencyType, PageSearchArgs } from "../../common"
+import { PageSearchArgs } from "../../common"
+import { AccountType } from "@prisma/client"
 
 @ArgsType()
 export class AccountsArgs extends PageSearchArgs {
@@ -12,10 +13,6 @@ export class AccountsArgs extends PageSearchArgs {
   @Field(() => AccountType, { nullable: true, description: "계좌 타입" })
   @IsOptional()
   type?: AccountType
-
-  @Field(() => CurrencyType, { nullable: true, description: "계좌 통화" })
-  @IsOptional()
-  currency?: CurrencyType
 
   @Field(() => Number, { nullable: true, description: "사용자 ID" })
   @IsOptional()

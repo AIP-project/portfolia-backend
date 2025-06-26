@@ -1,42 +1,46 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
 import { HttpService } from "@nestjs/axios"
 import { ConfigService } from "@nestjs/config"
-import { CoinPriceHistory } from "./entities"
 import { firstValueFrom } from "rxjs"
 import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
-import { ExternalServiceException, InterfaceConfig } from "../common"
-import { CoinSummary } from "../coin-summary/entities"
+import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
+import { PrismaService } from "../common/prisma"
 
 @Injectable()
 export class CoinPriceHistoryService {
   private readonly logger = new Logger(CoinPriceHistoryService.name)
 
   constructor(
-    @InjectRepository(CoinPriceHistory) private readonly coinPriceHistoryRepository: Repository<CoinPriceHistory>,
-    @InjectRepository(CoinSummary) private readonly coinSummaryRepository: Repository<CoinSummary>,
+    private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {}
 
   async updateCoinPrice() {
-    const distinctCoinSymbols = await this.coinSummaryRepository
-      .createQueryBuilder("coinSummary")
-      .select("coinSummary.symbol", "symbol")
-      .addSelect("coinSummary.slug", "slug")
-      .where("coinSummary.type = :type", { type: "SUMMARY" })
-      .andWhere("coinSummary.isDelete = :isDelete", { isDelete: false })
-      .groupBy("coinSummary.symbol")
-      .addGroupBy("coinSummary.slug")
-      .getRawMany()
+    const nestConfig = this.configService.get<NestConfig>("nest")!
+    if (nestConfig.environment === "local") {
+      return "Local environment, skipping coin price update."
+    }
+
+    const distinctCoinSymbols = await this.prisma.coinSummary.findMany({
+      where: {
+        type: "SUMMARY",
+        isDelete: false,
+      },
+      select: {
+        symbol: true,
+        slug: true,
+      },
+      distinct: ["symbol", "slug"],
+    })
 
     // const slugsString = distinctCoinSymbols.map((item) => item.slug).join(",")
     const symbolsString = distinctCoinSymbols.map((item) => item.symbol).join(",")
 
     if (symbolsString.length === 0) {
-      return
+      this.logger.warn("No distinct coin symbols found to update.")
+      return "No distinct coin symbols found."
     }
 
     const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
@@ -66,6 +70,11 @@ export class CoinPriceHistoryService {
       if (coinArray.length > 0) {
         const coin = coinArray[0]
 
+        if (!coin.quote.USD || !coin.quote.USD.price) {
+          this.logger.warn(`Coin "${symbol}" does not have USD quote data`)
+          return
+        }
+
         bulkCoinPriceHistory.push({
           symbol: symbol,
           currency: "USD",
@@ -77,24 +86,41 @@ export class CoinPriceHistoryService {
       }
     })
 
-    await this.coinPriceHistoryRepository.save(bulkCoinPriceHistory)
+    await this.prisma.coinPriceHistory.createMany({
+      data: bulkCoinPriceHistory,
+    })
 
     return "success"
   }
 
   async findBySymbols(symbols: string[]) {
-    return this.coinPriceHistoryRepository
-      .createQueryBuilder("cph")
-      .where("cph.symbol IN (:...symbols)", { symbols })
-      .andWhere((qb) => {
-        const subQuery = qb
-          .subQuery()
-          .select("MAX(c.id)")
-          .from(CoinPriceHistory, "c")
-          .where("c.symbol = cph.symbol")
-          .getQuery()
-        return "cph.id = " + subQuery
-      })
-      .getMany()
+    if (!symbols || symbols.length === 0) {
+      return []
+    }
+
+    // 1. 각 symbol 별로 가장 큰 id (최신 id)를 조회합니다.
+    const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>`
+      SELECT MAX(id) as max_id
+      FROM coin_price_history
+      WHERE symbol IN (${symbols.map((s) => `'${s}'`).join(",")})
+      GROUP BY symbol
+    `
+
+    // 결과가 없으면 빈 배열 반환
+    if (maxIdsResult.length === 0) {
+      return []
+    }
+
+    // 조회된 max_id 값들만 추출합니다.
+    const latestIds = maxIdsResult.map((result) => result.max_id)
+
+    // 2. 추출된 id 목록을 사용하여 최종 데이터를 조회합니다.
+    return this.prisma.coinPriceHistory.findMany({
+      where: {
+        id: {
+          in: latestIds,
+        },
+      },
+    })
   }
 }

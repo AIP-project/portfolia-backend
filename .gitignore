@@ -56,3 +56,4 @@ schema.graphql
 .terraform
 terraform.tfstate
 terraform.tfstate.backup
+/db_backups

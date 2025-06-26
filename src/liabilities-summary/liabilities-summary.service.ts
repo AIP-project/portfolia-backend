@@ -1,17 +1,12 @@
 import { Injectable } from "@nestjs/common"
 import { UpdateLiabilitiesSummaryInput } from "./dto"
-import { AccountType, ErrorMessage, ForbiddenException, JwtPayload, UserRole, ValidationException } from "../common"
-import { LiabilitiesSummary } from "./entities"
-import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
-import { Account } from "../account/entities/account.entity"
+import { ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
+import { PrismaService } from "../common/prisma"
+import { AccountType, Prisma, UserRole } from "@prisma/client"
 
 @Injectable()
 export class LiabilitiesSummaryService {
-  constructor(
-    @InjectRepository(LiabilitiesSummary) private readonly liabilitiesSummaryRepository: Repository<LiabilitiesSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async updateLiabilitiesSummary(jwtPayload: JwtPayload, updateLiabilitiesSummaryInput: UpdateLiabilitiesSummaryInput) {
     const cleanInput = await this.cleanUpdateEtcSummary(jwtPayload, updateLiabilitiesSummaryInput)
@@ -22,12 +17,12 @@ export class LiabilitiesSummaryService {
     jwtPayload: JwtPayload,
     updateLiabilitiesSummaryInput: UpdateLiabilitiesSummaryInput,
   ) {
-    const existingLiabilitiesSummary = await this.liabilitiesSummaryRepository.findOne({
+    const existingLiabilitiesSummary = await this.prisma.liabilitiesSummary.findUnique({
       where: { id: updateLiabilitiesSummaryInput.id },
     })
     if (!existingLiabilitiesSummary) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ETC_SUMMARY)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: existingLiabilitiesSummary.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -39,15 +34,18 @@ export class LiabilitiesSummaryService {
     return { ...updateLiabilitiesSummaryInput, existingLiabilitiesSummary: existingLiabilitiesSummary }
   }
 
-  private async txUpdateEtcSummary(
-    cleanInput: UpdateLiabilitiesSummaryInput & { existingLiabilitiesSummary: LiabilitiesSummary },
-  ) {
-    return this.liabilitiesSummaryRepository.manager.transaction(async (manager) => {
+  private async txUpdateEtcSummary(cleanInput: UpdateLiabilitiesSummaryInput & { existingLiabilitiesSummary: any }) {
+    return this.prisma.$transaction(async (prisma) => {
       const { existingLiabilitiesSummary, ...input } = cleanInput
 
-      const updatedLiabilitiesSummary = manager.merge(LiabilitiesSummary, existingLiabilitiesSummary, input)
-
-      return await manager.save(LiabilitiesSummary, updatedLiabilitiesSummary)
+      return prisma.liabilitiesSummary.update({
+        where: { id: existingLiabilitiesSummary.id },
+        data: input,
+      })
     })
+  }
+
+  async findBy(where: Prisma.LiabilitiesSummaryWhereInput) {
+    return this.prisma.liabilitiesSummary.findMany({ where })
   }
 }

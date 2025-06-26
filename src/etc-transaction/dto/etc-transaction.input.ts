@@ -1,6 +1,6 @@
 import { Field, Float, InputType } from "@nestjs/graphql"
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, MinLength } from "class-validator"
-import { CurrencyType } from "../../common"
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from "class-validator"
+import { CurrencyType } from "@prisma/client"
 
 @InputType()
 export class EtcTransactionInput {
@@ -12,7 +12,6 @@ export class EtcTransactionInput {
   @Field({ nullable: true, description: "기타 거래 이름" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   name?: string
 
   @Field(() => Float, { nullable: true, description: "기타 거래 구매가격" })
@@ -33,7 +32,6 @@ export class EtcTransactionInput {
   @Field({ nullable: true, description: "기타 거래 기관" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   operation?: string
 
   @Field({ nullable: true, description: "기타 거래 타입" })

@@ -1,53 +1,69 @@
 import { Injectable, Logger } from "@nestjs/common"
 import { HttpService } from "@nestjs/axios"
-import { InjectRepository } from "@nestjs/typeorm"
-import { In, Repository } from "typeorm"
-import { StockSummary } from "../stock-summary/entities"
 import { ConfigService } from "@nestjs/config"
-import { ExchangeRate } from "./entities/exchange-rate.entity"
-import { CoinSummary } from "../coin-summary/entities"
-import { Account } from "../account/entities/account.entity"
-import { ExternalServiceException, InterfaceConfig } from "../common"
+import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
 import { firstValueFrom } from "rxjs"
 import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
+import { PrismaService } from "../common/prisma"
 
 @Injectable()
 export class ExchangeService {
   private readonly logger = new Logger(ExchangeService.name)
 
   constructor(
-    @InjectRepository(ExchangeRate) private readonly exchangeRateRepository: Repository<ExchangeRate>,
+    private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {}
 
   async updateExchange() {
-    const stockCurrencies = await this.exchangeRateRepository.manager
-      .createQueryBuilder(StockSummary, "stockSummary")
-      .select("stockSummary.currency")
-      .groupBy("stockSummary.currency")
-      .getRawMany()
+    const nestConfig = this.configService.get<NestConfig>("nest")!
+    if (nestConfig.environment === "local") {
+      return
+    }
 
-    const coinCurrencies = await this.exchangeRateRepository.manager
-      .createQueryBuilder(CoinSummary, "coinSummary")
-      .select("coinSummary.currency")
-      .groupBy("coinSummary.currency")
-      .getRawMany()
+    const bankCurrencies = await this.prisma.bankSummary.findMany({
+      where: { isDelete: false },
+      select: { currency: true },
+      distinct: ["currency"],
+    })
 
-    const accountCurrencies = await this.exchangeRateRepository.manager
-      .createQueryBuilder(Account, "account")
-      .select("account.currency")
-      .groupBy("account.currency")
-      .getRawMany()
+    const stockCurrencies = await this.prisma.stockSummary.findMany({
+      where: { isDelete: false },
+      select: { currency: true },
+      distinct: ["currency"],
+    })
 
-    const stockCurrencyValues = stockCurrencies.map((item) => item.stockSummary_currency)
-    const coinCurrencyValues = coinCurrencies.map((item) => item.coinSummary_currency)
-    const accountCurrencyValues = accountCurrencies.map((item) => item.account_currency)
+    const coinCurrencies = await this.prisma.coinSummary.findMany({
+      where: { isDelete: false },
+      select: { currency: true },
+      distinct: ["currency"],
+    })
 
-    const uniqueCurrencies = [
-      ...new Set([...stockCurrencyValues, ...coinCurrencyValues, ...accountCurrencyValues]),
-    ].filter((currency) => currency !== null && currency !== undefined)
+    const etcCurrencies = await this.prisma.etcSummary.findMany({
+      where: { isDelete: false },
+      select: { currency: true },
+      distinct: ["currency"],
+    })
+
+    const liabilitiesCurrencies = await this.prisma.liabilitiesSummary.findMany({
+      where: { isDelete: false },
+      select: { currency: true },
+      distinct: ["currency"],
+    })
+
+    const uniqueCurrencies = Array.from(
+      new Set(
+        [
+          ...bankCurrencies.map((item) => item.currency),
+          ...stockCurrencies.map((item) => item.currency),
+          ...coinCurrencies.map((item) => item.currency),
+          ...etcCurrencies.map((item) => item.currency),
+          ...liabilitiesCurrencies.map((item) => item.currency),
+        ].filter((currency) => currency != null),
+      ), // null과 undefined 모두 제거
+    )
 
     const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
     const url = `${interfaceConfig.exchangeRateApiUrl}?app_id=${interfaceConfig.exchangeRateApiKey}&symbols=${uniqueCurrencies.join(",")}`
@@ -62,29 +78,21 @@ export class ExchangeService {
       ),
     )
 
-    await this.exchangeRateRepository.save({
-      base: exchangeInfo.base,
-      exchangeRates: exchangeInfo.rates,
+    await this.prisma.exchangeRate.create({
+      data: {
+        base: exchangeInfo.base,
+        exchangeRates: exchangeInfo.rates,
+      },
     })
 
     return "success"
   }
 
-  async findByIds(ids: number[]) {
-    return this.exchangeRateRepository.find({
-      where: {
-        id: In(ids),
-      },
-    })
-  }
-
   async lastOneLoad() {
-    const lastExchange = await this.exchangeRateRepository.find({
-      order: {
-        id: "DESC",
+    return this.prisma.exchangeRate.findFirst({
+      orderBy: {
+        id: "desc",
       },
-      take: 1,
     })
-    return lastExchange.length > 0 ? lastExchange.at(0) : null
   }
 }

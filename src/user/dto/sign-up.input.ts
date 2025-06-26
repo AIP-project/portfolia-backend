@@ -1,6 +1,6 @@
 import { Field, InputType } from "@nestjs/graphql"
 import { IsEmail, IsEnum, IsOptional, IsString } from "class-validator"
-import { CurrencyType } from "../../common"
+import { CurrencyType } from "@prisma/client"
 
 @InputType({ description: "회원가입 입력 타입" })
 export class SignUpInput {

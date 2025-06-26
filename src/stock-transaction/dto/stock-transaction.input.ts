@@ -1,6 +1,7 @@
 import { Field, Float, InputType } from "@nestjs/graphql"
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, MinLength } from "class-validator"
-import { CurrencyType, TransactionType } from "../../common"
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from "class-validator"
+import { Transform } from "class-transformer"
+import { CurrencyType, TransactionType } from "@prisma/client"
 
 @InputType()
 export class StockTransactionInput {
@@ -12,13 +13,12 @@ export class StockTransactionInput {
   @Field({ nullable: true, description: "주식 거래 이름" })
   @IsOptional()
   @IsString()
-  @MinLength(2)
   name?: string
 
   @Field({ nullable: true, description: "주식 거래 심볼" })
+  @Transform(({ value }) => (typeof value === "string" ? value.toUpperCase() : value)) // 대문자 변환
   @IsOptional()
   @IsString()
-  @MinLength(2)
   symbol?: string
 
   @Field(() => Float, { nullable: true, description: "주식 거래 수량" })
