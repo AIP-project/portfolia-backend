@@ -19,9 +19,9 @@ export class CoinPriceHistoryService {
 
   async updateCoinPrice() {
     const nestConfig = this.configService.get<NestConfig>("nest")!
-    // if (nestConfig.environment === "local") {
-    //   return "Local environment, skipping coin price update."
-    // }
+    if (nestConfig.environment === "local") {
+      return "Local environment, skipping coin price update."
+    }
 
     const distinctCoinSymbols = await this.prisma.coinSummary.findMany({
       where: {

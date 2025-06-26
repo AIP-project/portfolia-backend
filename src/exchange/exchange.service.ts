@@ -19,9 +19,9 @@ export class ExchangeService {
 
   async updateExchange() {
     const nestConfig = this.configService.get<NestConfig>("nest")!
-    // if (nestConfig.environment === "local") {
-    //   return
-    // }
+    if (nestConfig.environment === "local") {
+      return
+    }
 
     const bankCurrencies = await this.prisma.bankSummary.findMany({
       where: { isDelete: false },
