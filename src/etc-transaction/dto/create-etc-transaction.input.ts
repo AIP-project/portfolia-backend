@@ -1,6 +1,6 @@
 import { Field, Float, InputType, OmitType } from "@nestjs/graphql"
 import { EtcTransactionInput } from "./etc-transaction.input"
-import { IsNumber, IsString, MinLength } from "class-validator"
+import { IsNumber, IsString } from "class-validator"
 
 @InputType()
 export class CreateEtcTransactionInput extends OmitType(EtcTransactionInput, ["id"]) {

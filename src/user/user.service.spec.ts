@@ -1,7 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing"
 import { UserService } from "./user.service"
-import { getRepositoryToken } from "@nestjs/typeorm"
-import { User } from "./entities/user.entity"
+import { User } from "./dto/users.model"
 import {
   BadRequestException,
   CustomJwtService,
@@ -15,15 +14,15 @@ import {
   UserRole,
   ValidationException,
 } from "../common"
+import { PrismaService } from "../common/prisma"
 import { SignInInput, SignUpInput, UpdateUserInput, UsersArgs } from "./dto"
 import { UserState } from "../common/enum/user-state.enum"
 import {
   createMockJwtService,
   createMockPasswordService,
-  createMockRepository,
+  createMockPrismaService,
   generateMockTokens,
   generateMockUser,
-  mockEntityManager,
   resetAllMocks,
 } from "../../test/mock"
 import { CommonInput } from "../common/dto/common.input"
@@ -31,7 +30,7 @@ import { CommonInput } from "../common/dto/common.input"
 describe("UserService", () => {
   let service: UserService
 
-  const mockUserRepository = createMockRepository()
+  const mockPrismaService = createMockPrismaService()
   const mockPasswordService = createMockPasswordService()
   const mockJwtService = createMockJwtService()
 
@@ -40,8 +39,8 @@ describe("UserService", () => {
       providers: [
         UserService,
         {
-          provide: getRepositoryToken(User),
-          useValue: mockUserRepository,
+          provide: PrismaService,
+          useValue: mockPrismaService,
         },
         {
           provide: PasswordService,

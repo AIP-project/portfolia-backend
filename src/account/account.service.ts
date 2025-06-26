@@ -1,37 +1,14 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { EntityManager, FindOptionsWhere, ILike, In, Repository } from "typeorm"
-import { Account } from "./entities/account.entity"
-import { AccountInput, AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
-import { BankSummary } from "../bank-summary/entities"
-import { StockSummary } from "../stock-summary/entities"
-import { CoinSummary } from "../coin-summary/entities"
-import {
-  AccountType,
-  addAmount,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  SummaryType,
-  UserRole,
-  ValidationException,
-} from "../common"
-import { EtcSummary } from "../etc-summary/entities"
-import { LiabilitiesSummary } from "../liabilities-summary/entities"
-import { BankTransaction } from "../bank-transaction/entities"
-import { StockTransaction } from "../stock-transaction/entities"
-import { CoinTransaction } from "../coin-transaction/entities"
-import { EtcTransaction } from "../etc-transaction/entities"
-import { LiabilitiesTransaction } from "../liabilities-transaction/entities"
-import { ExchangeRate } from "../exchange/entities/exchange-rate.entity"
-import { CoinPriceHistory } from "../coin-price-history/entities"
-import { StockPriceHistory } from "../stock-price-history/entities"
+import { Account, AccountInput, AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
+import { addAmount, ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
+import { PrismaService } from "../common/prisma"
+import { AccountType, Prisma, SummaryType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class AccountService {
   private readonly logger = new Logger(AccountService.name)
 
-  constructor(@InjectRepository(Account) private readonly accountRepository: Repository<Account>) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private async commonCheckAccount(jwtPayload: JwtPayload, accountInput: AccountInput) {
     const cleanInput = new AccountInput()
@@ -45,20 +22,6 @@ export class AccountService {
 
     if (!cleanInput.userId) throw new ValidationException(ErrorMessage.MSG_PARAMETER_REQUIRED)
 
-    if (accountInput.nickName) {
-      const existAccountName = await this.accountRepository.exists({
-        where: {
-          user: {
-            id: cleanInput.userId,
-          },
-          nickName: accountInput.nickName,
-          isDelete: false,
-          type: accountInput.type,
-        },
-      })
-
-      if (existAccountName) throw new ForbiddenException(ErrorMessage.MSG_ACCOUNT_NAME_ALREADY_EXISTS)
-    }
     return { ...accountInput, ...cleanInput }
   }
 
@@ -85,29 +48,46 @@ export class AccountService {
   }
 
   private async txCreateAccount(cleanInput: CreateAccountInput) {
-    return this.accountRepository.manager.transaction(async (manager) => {
-      const { bankSummary, stockSummary, coinSummary, ...accountInput } = cleanInput
-      const account = await manager.save(Account, accountInput)
+    return this.prisma.$transaction(async (prisma) => {
+      const { bankSummary, stockSummary, coinSummary, userId, ...accountInput } = cleanInput
+      const account = await prisma.account.create({
+        data: {
+          ...accountInput,
+          nickName: accountInput.nickName!,
+          userId: userId,
+        },
+      })
+
       if (account.type === AccountType.BANK) {
-        await manager.save(BankSummary, { accountId: account.id, currency: account.currency, ...bankSummary })
+        await prisma.bankSummary.create({
+          data: { accountId: account.id, currency: account.currency, ...bankSummary },
+        })
       } else if (account.type === AccountType.STOCK) {
-        await manager.save(StockSummary, {
-          accountId: account.id,
-          type: SummaryType.CASH,
-          currency: account.currency,
-          ...stockSummary,
+        await prisma.stockSummary.create({
+          data: {
+            accountId: account.id,
+            type: SummaryType.CASH,
+            currency: account.currency,
+            ...stockSummary,
+          },
         })
       } else if (account.type === AccountType.COIN) {
-        await manager.save(CoinSummary, {
-          accountId: account.id,
-          type: SummaryType.CASH,
-          currency: account.currency,
-          ...coinSummary,
+        await prisma.coinSummary.create({
+          data: {
+            accountId: account.id,
+            type: SummaryType.CASH,
+            currency: account.currency,
+            ...coinSummary,
+          },
         })
       } else if (account.type === AccountType.ETC) {
-        await manager.save(EtcSummary, { accountId: account.id, currency: account.currency })
+        await prisma.etcSummary.create({
+          data: { accountId: account.id, currency: account.currency },
+        })
       } else if (account.type === AccountType.LIABILITIES) {
-        await manager.save(LiabilitiesSummary, { accountId: account.id, currency: account.currency })
+        await prisma.liabilitiesSummary.create({
+          data: { accountId: account.id, currency: account.currency },
+        })
       }
       return account
     })
@@ -125,32 +105,37 @@ export class AccountService {
       if (userId) searchUserId = userId
     }
 
-    const whereConditions: FindOptionsWhere<Account> = {
+    const whereConditions: Prisma.AccountWhereInput = {
       isDelete: false,
     }
 
-    if (searchUserId) whereConditions.user = { id: searchUserId }
-    if (name) whereConditions.nickName = ILike(`%${name}%`)
+    if (searchUserId) whereConditions.userId = searchUserId
+    if (name) whereConditions.nickName = { contains: name }
     if (type) whereConditions.type = type
 
     // Order by 설정
-    const order =
+    const orderBy: Prisma.AccountOrderByWithRelationInput =
       sortBy.length > 0
         ? sortBy.reduce(
             (acc, { field, direction }) => ({
               ...acc,
-              [field]: direction ? "ASC" : "DESC",
+              [field]: direction ? "asc" : "desc",
             }),
             {},
           )
-        : { createdAt: "ASC" } // 기본 정렬
+        : { createdAt: "asc" } // 기본 정렬
 
-    const [accounts, total] = await this.accountRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [accounts, total] = await Promise.all([
+      this.prisma.account.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.account.count({
+        where: whereConditions,
+      }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
@@ -167,7 +152,9 @@ export class AccountService {
   }
 
   async account(jwtPayload: JwtPayload, id: number) {
-    const account = await this.accountRepository.findOne({ where: { id: id, isDelete: false } })
+    const account = await this.prisma.account.findFirst({
+      where: { id: id, isDelete: false },
+    })
 
     if (!account) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (account.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
@@ -187,7 +174,7 @@ export class AccountService {
 
   private async cleanUpdateAccount(jwtPayload: JwtPayload, updateAccountInput: UpdateAccountInput) {
     const cleanInput = await this.commonCheckAccount(jwtPayload, updateAccountInput)
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findFirst({
       where: { id: cleanInput.id, isDelete: false },
     })
     if (!existingAccount) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -196,13 +183,9 @@ export class AccountService {
   }
 
   private async txUpdateAccount(cleanInput: UpdateAccountInput) {
-    return this.accountRepository.manager.transaction(async (manager) => {
-      const existingAccount = await manager.findOne(Account, {
-        where: { id: cleanInput.id },
-      })
-
-      const updatedAccount = manager.merge(Account, existingAccount, cleanInput)
-      return await manager.save(Account, updatedAccount)
+    return this.prisma.account.update({
+      where: { id: cleanInput.id },
+      data: cleanInput,
     })
   }
 
@@ -211,9 +194,9 @@ export class AccountService {
    * 계정과 관련된 모든 summary와 transaction을 함께 삭제 처리
    */
   private async txDeleteAccount(cleanInput: UpdateAccountInput) {
-    return this.accountRepository.manager.transaction(async (manager) => {
+    return this.prisma.$transaction(async (prisma) => {
       // 계정 정보 조회
-      const existingAccount = await manager.findOne(Account, {
+      const existingAccount = await prisma.account.findUnique({
         where: { id: cleanInput.id },
       })
 
@@ -226,149 +209,192 @@ export class AccountService {
       // 계정 타입에 따라 관련 엔티티 삭제
       switch (existingAccount.type) {
         case AccountType.BANK:
-          await this.txDeleteBankEntities(manager, accountId)
+          await this.txDeleteBankEntities(prisma, accountId)
           break
         case AccountType.STOCK:
-          await this.txDeleteStockEntities(manager, accountId)
+          await this.txDeleteStockEntities(prisma, accountId)
           break
         case AccountType.COIN:
-          await this.txDeleteCoinEntities(manager, accountId)
+          await this.txDeleteCoinEntities(prisma, accountId)
           break
         case AccountType.ETC:
-          await this.txDeleteEtcEntities(manager, accountId)
+          await this.txDeleteEtcEntities(prisma, accountId)
           break
         case AccountType.LIABILITIES:
-          await this.txDeleteLiabilitiesEntities(manager, accountId)
+          await this.txDeleteLiabilitiesEntities(prisma, accountId)
           break
       }
 
       // 계정 자체를 논리적으로 삭제 (isDelete = true)
-      const updatedAccount = manager.merge(Account, existingAccount, { isDelete: true })
-      return await manager.save(Account, updatedAccount)
+      return prisma.account.update({
+        where: { id: existingAccount.id },
+        data: { isDelete: true },
+      })
     })
   }
 
   /**
    * 은행 계정 관련 엔티티 삭제 트랜잭션 함수
    */
-  private async txDeleteBankEntities(manager: EntityManager, accountId: number) {
+  private async txDeleteBankEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 은행 요약 정보 삭제
-    await manager.update(BankSummary, { accountId }, { isDelete: true })
+    await prisma.bankSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
 
     // 은행 거래 정보 삭제
-    await manager.update(BankTransaction, { accountId }, { isDelete: true })
+    await prisma.bankTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
   }
 
   /**
    * 주식 계정 관련 엔티티 삭제 트랜잭션 함수
    */
-  private async txDeleteStockEntities(manager: EntityManager, accountId: number) {
+  private async txDeleteStockEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 주식 요약 정보 삭제
-    await manager.update(StockSummary, { accountId }, { isDelete: true })
+    await prisma.stockSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
 
     // 주식 거래 정보 삭제
-    await manager.update(StockTransaction, { accountId }, { isDelete: true })
+    await prisma.stockTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
   }
 
   /**
    * 코인 계정 관련 엔티티 삭제 트랜잭션 함수
    */
-  private async txDeleteCoinEntities(manager: EntityManager, accountId: number) {
+  private async txDeleteCoinEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 코인 요약 정보 삭제
-    await manager.update(CoinSummary, { accountId }, { isDelete: true })
+    await prisma.coinSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
 
     // 코인 거래 정보 삭제
-    await manager.update(CoinTransaction, { accountId }, { isDelete: true })
+    await prisma.coinTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
   }
 
   /**
    * 기타 계정 관련 엔티티 삭제 트랜잭션 함수
    */
-  private async txDeleteEtcEntities(manager: EntityManager, accountId: number) {
+  private async txDeleteEtcEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 기타 요약 정보 삭제
-    await manager.update(EtcSummary, { accountId }, { isDelete: true })
+    await prisma.etcSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
 
     // 기타 거래 정보 삭제
-    await manager.update(EtcTransaction, { accountId }, { isDelete: true })
+    await prisma.etcTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
   }
 
   /**
    * 부채 계정 관련 엔티티 삭제 트랜잭션 함수
    */
-  private async txDeleteLiabilitiesEntities(manager: EntityManager, accountId: number) {
+  private async txDeleteLiabilitiesEntities(prisma: Prisma.TransactionClient, accountId: number) {
     // 부채 요약 정보 삭제
-    await manager.update(LiabilitiesSummary, { accountId }, { isDelete: true })
+    await prisma.liabilitiesSummary.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
 
     // 부채 거래 정보 삭제
-    await manager.update(LiabilitiesTransaction, { accountId }, { isDelete: true })
+    await prisma.liabilitiesTransaction.updateMany({
+      where: { accountId },
+      data: { isDelete: true },
+    })
   }
 
   async resolveBankSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.BANK) return null
-    return this.accountRepository.manager.findOne(BankSummary, {
-      where: { accountId: account.id, account: { userId: payload.id, isDelete: false } },
+    return this.prisma.bankSummary.findFirst({
+      where: {
+        accountId: account.id,
+        account: { userId: payload.id, isDelete: false },
+      },
     })
   }
 
   async resolveStockSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.STOCK) return null
-    return this.accountRepository.manager.findOne(StockSummary, {
-      where: { accountId: account.id, type: SummaryType.CASH, account: { userId: payload.id, isDelete: false } },
+    return this.prisma.stockSummary.findFirst({
+      where: {
+        accountId: account.id,
+        type: SummaryType.CASH,
+        account: { userId: payload.id, isDelete: false },
+      },
     })
   }
 
   async resolveCoinSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.COIN) return null
-    return this.accountRepository.manager.findOne(CoinSummary, {
-      where: { accountId: account.id, type: SummaryType.CASH, account: { userId: payload.id, isDelete: false } },
+    return this.prisma.coinSummary.findFirst({
+      where: {
+        accountId: account.id,
+        type: SummaryType.CASH,
+        account: { userId: payload.id, isDelete: false },
+      },
     })
   }
 
   async resolveEtcSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.ETC) return null
-    return this.accountRepository.manager.findOne(EtcSummary, {
-      where: { accountId: account.id, account: { userId: payload.id, isDelete: false } },
+    return this.prisma.etcSummary.findFirst({
+      where: {
+        accountId: account.id,
+        account: { userId: payload.id, isDelete: false },
+      },
     })
   }
 
   async resolveLiabilitiesSummary(payload: JwtPayload, account: Account) {
     if (account.type !== AccountType.LIABILITIES) return null
-    return this.accountRepository.manager.findOne(LiabilitiesSummary, {
-      where: { accountId: account.id, account: { userId: payload.id, isDelete: false } },
+    return this.prisma.liabilitiesSummary.findFirst({
+      where: {
+        accountId: account.id,
+        account: { userId: payload.id, isDelete: false },
+      },
     })
   }
 
   async dashboard(jwtPayload: JwtPayload) {
-    // 각 summary 조회 쿼리에서 관계를 명시적으로 로드
-    // relationLoadStrategy: "join"으로 설정하면 INNER JOIN으로 한 번에 데이터를 가져옴
-    const coinSummary = await this.accountRepository.manager.find(CoinSummary, {
+    // 각 summary 조회 쿼리
+    const coinSummary = await this.prisma.coinSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      relations: { account: true },
-      relationLoadStrategy: "join",
+      include: { account: true },
     })
 
-    const stockSummary = await this.accountRepository.manager.find(StockSummary, {
+    const stockSummary = await this.prisma.stockSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      relations: { account: true },
-      relationLoadStrategy: "join",
+      include: { account: true },
     })
 
-    const etcSummary = await this.accountRepository.manager.find(EtcSummary, {
+    const etcSummary = await this.prisma.etcSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      relations: { account: true },
-      relationLoadStrategy: "join",
+      include: { account: true },
     })
 
-    const liabilitiesSummary = await this.accountRepository.manager.find(LiabilitiesSummary, {
+    const liabilitiesSummary = await this.prisma.liabilitiesSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      relations: { account: true },
-      relationLoadStrategy: "join",
+      include: { account: true },
     })
 
-    const bankSummary = await this.accountRepository.manager.find(BankSummary, {
+    const bankSummary = await this.prisma.bankSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      relations: { account: true },
-      relationLoadStrategy: "join",
+      include: { account: true },
     })
 
     const assets = []
@@ -380,43 +406,50 @@ export class AccountService {
     let liabilitiesTotalAmount = 0
     let cashTotalAmount = 0
 
-    const exchangeRateOne = await this.accountRepository.manager.findOne(ExchangeRate, {
-      where: {},
-      order: { createdAt: "DESC" },
+    const exchangeRateOne = await this.prisma.exchangeRate.findFirst({
+      orderBy: { createdAt: "desc" },
     })
-    if (!exchangeRateOne) return null
+    if (!exchangeRateOne)
+      return {
+        asset: [],
+        liabilities: [],
+        cash: [],
+        assetTotalAmount: 0,
+        liabilitiesTotalAmount: 0,
+        cashTotalAmount: 0,
+      }
 
-    const exchangeRate = exchangeRateOne.exchangeRates
+    const exchangeRate = exchangeRateOne.exchangeRates as Record<string, number>
 
     const defaultCurrencyRate = exchangeRate[jwtPayload.currency]
 
     const coinSymbols = coinSummary
       .filter((summary) => summary.type === SummaryType.SUMMARY)
       .map((summary) => summary.symbol)
+      .filter(Boolean)
 
-    let coinPriceHistories: CoinPriceHistory[] = []
+    let coinPriceHistories: any[] = []
 
     if (coinSymbols.length > 0) {
-      coinPriceHistories = await this.accountRepository.manager
-        .createQueryBuilder(CoinPriceHistory, "cph")
-        .where("cph.symbol IN (:...coinSymbols)", { coinSymbols })
-        .distinctOn(["cph.symbol"])
-        .orderBy("cph.symbol")
-        .addOrderBy("cph.createdAt", "DESC")
-        .getMany()
+      coinPriceHistories = await this.prisma.$queryRaw`
+        SELECT cph1.symbol, cph1.price
+        FROM coin_price_history cph1
+               INNER JOIN (SELECT symbol, MAX(createdAt) as max_created_at
+                           FROM coin_price_history
+                           WHERE symbol IN (${Prisma.join(coinSymbols)})
+                           GROUP BY symbol) cph2 ON cph1.symbol = cph2.symbol AND cph1.createdAt = cph2.max_created_at
+      `
     }
 
     for (const summary of coinSummary) {
-      const accountName = (await summary.account).nickName
+      const accountName = summary.account.nickName
 
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const currentPrice = coinPriceHistories.find((cph) => cph.symbol === summary.symbol)?.price
-      const amountInDefaultCurrency = (currentPrice || summary.amount) * crossRate
+      const amountInDefaultCurrency = (currentPrice ? Number(currentPrice) : Number(summary.amount)) * crossRate
 
       if (summary.type === SummaryType.CASH) {
         const existingCash = cash.find((s) => s.name === accountName)
@@ -440,30 +473,30 @@ export class AccountService {
     const stockSymbols = stockSummary
       .filter((summary) => summary.type === SummaryType.SUMMARY)
       .map((summary) => summary.symbol)
+      .filter(Boolean)
 
-    let stockPriceHistories: StockPriceHistory[] = []
+    let stockPriceHistories: any[] = []
 
     if (stockSymbols.length > 0) {
-      stockPriceHistories = await this.accountRepository.manager
-        .createQueryBuilder(StockPriceHistory, "sph")
-        .where("sph.symbol IN (:...stockSymbols)", { stockSymbols })
-        .distinctOn(["sph.symbol"])
-        .orderBy("sph.symbol")
-        .addOrderBy("sph.createdAt", "DESC")
-        .getMany()
+      stockPriceHistories = await this.prisma.$queryRaw`
+        SELECT sph1.symbol, sph1.base
+        FROM stock_price_history sph1
+               INNER JOIN (SELECT symbol, MAX(createdAt) as max_created_at
+                           FROM stock_price_history
+                           WHERE symbol IN (${Prisma.join(stockSymbols)})
+                           GROUP BY symbol) sph2 ON sph1.symbol = sph2.symbol AND sph1.createdAt = sph2.max_created_at
+      `
     }
 
     for (const summary of stockSummary) {
-      const accountName = (await summary.account).nickName
+      const accountName = summary.account.nickName
 
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const currentPrice = stockPriceHistories.find((sph) => sph.symbol === summary.symbol)?.base
-      const amountInDefaultCurrency = (currentPrice || summary.amount) * crossRate
+      const amountInDefaultCurrency = (currentPrice ? Number(currentPrice) : Number(summary.amount)) * crossRate
 
       if (summary.type === SummaryType.CASH) {
         const existingCash = cash.find((s) => s.name === accountName)
@@ -485,15 +518,13 @@ export class AccountService {
     }
 
     for (const summary of etcSummary) {
-      const accountName = (await summary.account).nickName
+      const accountName = summary.account.nickName
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
 
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      const amountInDefaultCurrency = (summary.currentPrice || summary.purchasePrice) * crossRate
+      const amountInDefaultCurrency = (Number(summary.currentPrice) || Number(summary.purchasePrice)) * crossRate
 
       const existingSummary = assets.find((s) => s.name === accountName)
       if (existingSummary) {
@@ -505,14 +536,12 @@ export class AccountService {
     }
 
     for (const summary of liabilitiesSummary) {
-      const accountName = (await summary.account).nickName
+      const accountName = summary.account.nickName
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      const amountInDefaultCurrency = (summary.remainingAmount || summary.amount) * crossRate
+      const amountInDefaultCurrency = (Number(summary.remainingAmount) || Number(summary.amount)) * crossRate
 
       const existingSummary = liabilities.find((s) => s.name === accountName)
       if (existingSummary) {
@@ -524,14 +553,12 @@ export class AccountService {
     }
 
     for (const summary of bankSummary) {
-      const accountName = (await summary.account).nickName
+      const accountName = summary.account.nickName
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      const amountInDefaultCurrency = summary.balance * crossRate
+      const amountInDefaultCurrency = Number(summary.balance) * crossRate
 
       const existingCash = cash.find((s) => s.name === accountName)
       if (existingCash) {
@@ -541,6 +568,17 @@ export class AccountService {
       }
       cashTotalAmount = addAmount(cashTotalAmount, amountInDefaultCurrency)
     }
+
+    const temp = {
+      asset: assets,
+      liabilities: liabilities,
+      cash: cash,
+      assetTotalAmount: assetTotalAmount,
+      liabilitiesTotalAmount: liabilitiesTotalAmount,
+      cashTotalAmount: cashTotalAmount,
+    }
+
+    console.log("Dashboard Summary:", JSON.stringify(temp, null, 2))
 
     return {
       asset: assets,
@@ -553,77 +591,65 @@ export class AccountService {
   }
 
   async allocation(jwtPayload: JwtPayload) {
-    const bankSummary = await this.accountRepository.manager.find(BankSummary, {
+    const bankSummary = await this.prisma.bankSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
     })
-    const stockSummary = await this.accountRepository.manager.find(StockSummary, {
+    const stockSummary = await this.prisma.stockSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
     })
-    const coinSummary = await this.accountRepository.manager.find(CoinSummary, {
+    const coinSummary = await this.prisma.coinSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
     })
-    const etcSummary = await this.accountRepository.manager.find(EtcSummary, {
+    const etcSummary = await this.prisma.etcSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
     })
-    const liabilitiesSummary = await this.accountRepository.manager.find(LiabilitiesSummary, {
+    const liabilitiesSummary = await this.prisma.liabilitiesSummary.findMany({
       where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
     })
 
-    const exchangeRateOne = await this.accountRepository.manager.findOne(ExchangeRate, {
-      where: {},
-      order: { createdAt: "DESC" },
+    const exchangeRateOne = await this.prisma.exchangeRate.findFirst({
+      orderBy: { createdAt: "desc" },
     })
     if (!exchangeRateOne) return null
 
-    const exchangeRate = exchangeRateOne.exchangeRates
+    const exchangeRate = exchangeRateOne.exchangeRates as Record<string, number>
 
     const defaultCurrencyRate = exchangeRate[jwtPayload.currency]
-    console.log(defaultCurrencyRate)
 
     const totalBank = bankSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, summary.balance * crossRate)
+      return addAmount(acc, Number(summary.balance) * crossRate)
     }, 0)
     const totalStock = stockSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, summary.amount * crossRate)
+      return addAmount(acc, Number(summary.amount) * crossRate)
     }, 0)
     const totalCoin = coinSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, summary.amount * crossRate)
+      return addAmount(acc, Number(summary.amount) * crossRate)
     }, 0)
     const totalEtc = etcSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, (summary.currentPrice || summary.purchasePrice) * crossRate)
+      return addAmount(acc, (Number(summary.currentPrice) || Number(summary.purchasePrice)) * crossRate)
     }, 0)
     const totalLiabilities = liabilitiesSummary.reduce((acc, summary) => {
       let summaryCurrencyRate: number
-      if (summary.currency)
-        summaryCurrencyRate = exchangeRate[summary.currency]
-      else
-        summaryCurrencyRate = 1
+      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
+      else summaryCurrencyRate = 1
       const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, (summary.remainingAmount || summary.amount) * crossRate)
+      return addAmount(acc, (Number(summary.remainingAmount) || Number(summary.amount)) * crossRate)
     }, 0)
 
     return {

@@ -1,7 +1,7 @@
 import { Field, Float, InputType, OmitType } from "@nestjs/graphql"
 import { CoinTransactionInput } from "./coin-transaction.input"
-import { IsEnum, IsNumber, IsString, MinLength } from "class-validator"
-import { TransactionType } from "../../common"
+import { IsEnum, IsNumber, IsString } from "class-validator"
+import { TransactionType } from "@prisma/client"
 
 @InputType()
 export class CreateCoinTransactionInput extends OmitType(CoinTransactionInput, ["id"]) {

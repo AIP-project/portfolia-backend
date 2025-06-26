@@ -1,6 +1,6 @@
 import { Field, Float, InputType } from "@nestjs/graphql"
 import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from "class-validator"
-import { CurrencyType, SummaryType } from "../../common"
+import { CurrencyType, SummaryType } from "@prisma/client"
 
 @InputType()
 export class StockSummaryInput {

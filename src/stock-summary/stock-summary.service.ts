@@ -1,62 +1,47 @@
 import { Injectable } from "@nestjs/common"
-import {
-  AccountType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  SummaryType,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
 import { StockSummariesArgs, UpdateStockSummaryInput } from "./dto"
-import { FindOptionsWhere, Repository } from "typeorm"
-import { InjectRepository } from "@nestjs/typeorm"
-import { Account } from "../account/entities/account.entity"
-import { StockSummary } from "./entities"
-import { StockTransaction } from "../stock-transaction/entities"
+import { PrismaService } from "../common/prisma"
+import { AccountType, Prisma, SummaryType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class StockSummaryService {
-  constructor(
-    @InjectRepository(StockSummary) private readonly stockSummaryRepository: Repository<StockSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async stockSummaries(jwtPayload: JwtPayload, stockSummariesArgs: StockSummariesArgs) {
     const { page = 1, take = 10, sortBy, accountId } = stockSummariesArgs
     const skip = (page - 1) * take
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const whereConditions: FindOptionsWhere<StockSummary> = {
+    const whereConditions = {
       accountId: accountId,
       type: SummaryType.SUMMARY,
       isDelete: false,
     }
 
     // Order by 설정
-    const order =
+    const orderBy =
       sortBy.length > 0
-        ? sortBy.reduce(
-            (acc, { field, direction }) => ({
-              ...acc,
-              [field]: direction ? "ASC" : "DESC",
-            }),
-            {},
-          )
-        : { createdAt: "ASC" } // 기본 정렬
+        ? sortBy.map(({ field, direction }) => ({
+            [field]: direction ? "asc" : "desc",
+          }))
+        : [{ createdAt: "asc" }] // 기본 정렬
 
-    const [stockSummaries, total] = await this.stockSummaryRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [stockSummaries, total] = await Promise.all([
+      this.prisma.stockSummary.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.stockSummary.count({ where: whereConditions }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
@@ -79,12 +64,12 @@ export class StockSummaryService {
   }
 
   private async cleanUpdateStockSummary(jwtPayload: JwtPayload, updateStockSummaryInput: UpdateStockSummaryInput) {
-    const existingStockSummary = await this.stockSummaryRepository.findOne({
+    const existingStockSummary = await this.prisma.stockSummary.findUnique({
       where: { id: updateStockSummaryInput.id },
     })
     if (!existingStockSummary) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_STOCK_SUMMARY)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: existingStockSummary.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -115,33 +100,36 @@ export class StockSummaryService {
     return { ...cleanInput, existingStockSummary }
   }
 
-  private async txUpdateStockSummary(cleanInput: UpdateStockSummaryInput & { existingStockSummary: StockSummary }) {
-    return this.stockSummaryRepository.manager.transaction(async (manager) => {
+  private async txUpdateStockSummary(cleanInput: UpdateStockSummaryInput & { existingStockSummary: any }) {
+    return this.prisma.$transaction(async (prisma) => {
       const { existingStockSummary, ...input } = cleanInput
 
-      const updatedStockSummary = manager.merge(StockSummary, existingStockSummary, input)
-
-      return await manager.save(StockSummary, updatedStockSummary)
+      return prisma.stockSummary.update({
+        where: { id: existingStockSummary.id },
+        data: input,
+      })
     })
   }
 
-  private async txDeleteStockSummary(cleanInput: UpdateStockSummaryInput & { existingStockSummary: StockSummary }) {
-    await this.stockSummaryRepository.manager.transaction(async (manager) => {
+  private async txDeleteStockSummary(cleanInput: UpdateStockSummaryInput & { existingStockSummary: any }) {
+    await this.prisma.$transaction(async (prisma) => {
       const { existingStockSummary, ...input } = cleanInput
-      await manager.update(
-        StockTransaction,
-        {
+      await prisma.stockTransaction.updateMany({
+        where: {
           isDelete: false,
           symbol: existingStockSummary.symbol,
         },
-        { isDelete: input.isDelete },
-      )
-      await manager.update(StockSummary, { isDelete: false, id: existingStockSummary.id }, { isDelete: input.isDelete })
+        data: { isDelete: input.isDelete },
+      })
+      await prisma.stockSummary.update({
+        where: { id: existingStockSummary.id },
+        data: { isDelete: input.isDelete },
+      })
     })
     return null
   }
 
-  async findBy(where: FindOptionsWhere<StockSummary>) {
-    return this.stockSummaryRepository.find({ where })
+  async findBy(where: Prisma.StockSummaryWhereInput) {
+    return this.prisma.stockSummary.findMany({ where })
   }
 }

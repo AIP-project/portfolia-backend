@@ -1,12 +1,11 @@
 import { Module } from "@nestjs/common"
 import { EtcSummaryService } from "./etc-summary.service"
 import { EtcSummaryResolver } from "./etc-summary.resolver"
-import { TypeOrmModule } from "@nestjs/typeorm"
-import { Account } from "../account/entities/account.entity"
-import { EtcSummary } from "./entities"
+import { EtcSummaryDataLoader } from "./etc-summary.dataloader"
 
 @Module({
-  imports: [TypeOrmModule.forFeature([EtcSummary, Account])],
-  providers: [EtcSummaryResolver, EtcSummaryService],
+  imports: [],
+  providers: [EtcSummaryResolver, EtcSummaryService, EtcSummaryDataLoader],
+  exports: [EtcSummaryDataLoader],
 })
 export class EtcSummaryModule {}

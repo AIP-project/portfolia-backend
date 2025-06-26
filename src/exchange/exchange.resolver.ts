@@ -1,7 +1,7 @@
 import { Query, Resolver } from "@nestjs/graphql"
-import { ExchangeRate } from "./entities/exchange-rate.entity"
 import { ExchangeService } from "./exchange.service"
 import { Public } from "../common"
+import { ExchangeRate } from "./dto/exchange.model"
 
 @Resolver(() => ExchangeRate)
 export class ExchangeResolver {

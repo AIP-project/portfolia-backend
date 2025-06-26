@@ -1,7 +1,7 @@
 import { Field, InputType, OmitType } from "@nestjs/graphql"
 import { UserInput } from "./user.input"
 import { IsEnum, IsNumber, IsOptional } from "class-validator"
-import { UserRole } from "../../common"
+import { UserRole } from "@prisma/client"
 
 @InputType({ description: "사용자 정보 업데이트 입력 타입" })
 export class UpdateUserInput extends OmitType(UserInput, ["email"]) {

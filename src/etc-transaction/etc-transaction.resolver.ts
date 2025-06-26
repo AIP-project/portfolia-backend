@@ -2,7 +2,7 @@ import { Args, Float, Mutation, Parent, Query, ResolveField, Resolver } from "@n
 import { JwtPayload, parseISOString, UserDecoded } from "../common"
 import { CreateEtcTransactionInput, EtcTransactions, EtcTransactionsArgs, UpdateEtcTransactionInput } from "./dto"
 import { EtcTransactionService } from "./etc-transaction.service"
-import { EtcTransaction } from "./entities"
+import { EtcTransaction } from "./dto/etc-transaction.model"
 import { ExchangeDataLoader } from "../exchange/exchange.dataloader"
 
 @Resolver(() => EtcTransaction)

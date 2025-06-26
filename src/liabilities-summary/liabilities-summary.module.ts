@@ -1,12 +1,11 @@
 import { Module } from "@nestjs/common"
 import { LiabilitiesSummaryService } from "./liabilities-summary.service"
 import { LiabilitiesSummaryResolver } from "./liabilities-summary.resolver"
-import { TypeOrmModule } from "@nestjs/typeorm"
-import { Account } from "../account/entities/account.entity"
-import { LiabilitiesSummary } from "./entities"
+import { LiabilitiesSummaryDataLoader } from "./liabilities-summary.dataloader"
 
 @Module({
-  imports: [TypeOrmModule.forFeature([LiabilitiesSummary, Account])],
-  providers: [LiabilitiesSummaryResolver, LiabilitiesSummaryService],
+  imports: [],
+  providers: [LiabilitiesSummaryResolver, LiabilitiesSummaryService, LiabilitiesSummaryDataLoader],
+  exports: [LiabilitiesSummaryDataLoader],
 })
 export class LiabilitiesSummaryModule {}

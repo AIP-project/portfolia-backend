@@ -30,7 +30,7 @@ locals {
         "0.0.0.0/0"
       ]
     }
-    production = {
+    prod = {
       cloud_run_instances = {
         min = 1
         max = 2
@@ -44,12 +44,7 @@ locals {
     }
   }
   env_secrets = [
-    "DATABASE_HOST",
-    "DATABASE_PORT",
-    "DATABASE_USERNAME",
-    "DATABASE_PASSWORD",
-    "DATABASE_NAME",
-    "DATABASE_SYNCHRONIZE",
+    "DATABASE_URL",
     "JWT_ACCESS_PRIVATE_KEY",
     "JWT_ACCESS_PUBLIC_KEY",
     "JWT_REFRESH_PRIVATE_KEY",
@@ -86,16 +81,6 @@ variable "gcpRegion" {
 data "google_secret_manager_secret_version" "db_host" {
   secret = "${var.stage}-DATABASE_HOST"  # 시크릿 이름
   version = "latest"
-}
-
-locals {
-  # 모든 /cloudsql/ 또는 // 접두사를 제거
-  cloudsql_instance = regex(
-    ".*/(.+:.+:.+)$",
-    data.google_secret_manager_secret_version.db_host.secret_data
-  )[
-  0
-  ]
 }
 
 # Cloud Run 서비스
@@ -142,7 +127,7 @@ resource "google_cloud_run_service" "default" {
       name = "aip-backend-service-${var.stage}-${formatdate("YYYYMMDDhhmmss", timestamp())}"
 
       annotations = {
-        "run.googleapis.com/cloudsql-instances"   = local.cloudsql_instance
+        "run.googleapis.com/cloudsql-instances"   = data.google_secret_manager_secret_version.db_host.secret_data
         "run.googleapis.com/startup-probe-path"   = "/health"
         "run.googleapis.com/liveness-probe-path"  = "/health"
         "run.googleapis.com/readiness-probe-path" = "/health"

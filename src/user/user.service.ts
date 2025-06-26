@@ -11,22 +11,19 @@ import {
   passwordRuleCheck,
   PasswordService,
   TokenType,
-  UserRole,
   ValidationException,
 } from "../common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { User } from "./entities/user.entity"
-import { FindOptionsWhere, ILike, Repository } from "typeorm"
-import { UserState } from "../common/enum/user-state.enum"
 import { SignInInput, SignUpInput, UpdateUserInput, UsersArgs } from "./dto"
 import { CommonInput } from "../common/dto/common.input"
+import { PrismaService } from "../common/prisma"
+import { UserRole, UserState } from "@prisma/client"
 
 @Injectable()
 export class UserService {
   private readonly logger = new Logger(UserService.name)
 
   constructor(
-    @InjectRepository(User) private readonly userRepository: Repository<User>,
+    private readonly prisma: PrismaService,
     private readonly passwordService: PasswordService,
     private readonly jwtService: CustomJwtService,
   ) {}
@@ -47,7 +44,7 @@ export class UserService {
         throw new ValidationException(ErrorMessage.MSG_PARAMETER_REQUIRED)
 
       emailRuleCheck(signUpInput.email)
-      const existUser = await this.userRepository.exists({ where: { email: signUpInput.email } })
+      const existUser = await this.prisma.user.findFirst({ where: { email: signUpInput.email } })
       if (existUser) throw new ValidationException(ErrorMessage.MSG_EMAIL_ALREADY_EXISTS)
 
       passwordRuleCheck(signUpInput.password)
@@ -63,22 +60,22 @@ export class UserService {
     return { ...signUpInput, ...cleanInput }
   }
 
-  private async txSignUp(signInInput: SignInInput) {
-    return this.userRepository.manager.transaction(async (manager) => {
-      return await manager.save(User, signInInput)
+  private async txSignUp(signUpInput: SignUpInput) {
+    return this.prisma.user.create({
+      data: signUpInput,
     })
   }
 
-  private async postSignUp(user: User) {
+  private async postSignUp(user: any) {
     const jwtPayload: JwtPayload = { id: user.id, role: user.role, email: user.email, currency: user.currency }
 
     return await this.jwtService.generateTokens(jwtPayload)
   }
 
   async signIn(signInInput: SignInInput) {
-    let user: User
+    let user: any
     if (signInInput.email && signInInput.password) {
-      const findUser = await this.userRepository.findOne({
+      const findUser = await this.prisma.user.findFirst({
         where: { email: signInInput.email, state: UserState.ACTIVE },
       })
       if (!findUser) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_USER)
@@ -100,33 +97,38 @@ export class UserService {
   }
 
   async users(usersArgs: UsersArgs) {
-    const { page = 1, take = 10, sortBy, name, email, role } = usersArgs
+    const { page = 1, take = 10, sortBy = [], name, email, role } = usersArgs
     const skip = (page - 1) * take
 
-    const whereConditions: FindOptionsWhere<User> = {}
+    const whereConditions: any = {}
 
-    if (name) whereConditions.name = ILike(`%${name}%`)
-    if (email) whereConditions.email = ILike(`%${email}%`)
+    if (name) whereConditions.name = { contains: name }
+    if (email) whereConditions.email = { contains: email }
     if (role) whereConditions.role = role
 
     // Order by 설정
-    const order =
+    const orderBy =
       sortBy.length > 0
         ? sortBy.reduce(
             (acc, { field, direction }) => ({
               ...acc,
-              [field]: direction ? "ASC" : "DESC",
+              [field]: direction ? "asc" : "desc",
             }),
             {},
           )
-        : { createdAt: "ASC" } // 기본 정렬
+        : { createdAt: "asc" } // 기본 정렬
 
-    const [users, total] = await this.userRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.user.count({
+        where: whereConditions,
+      }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
@@ -143,11 +145,11 @@ export class UserService {
   }
 
   async me(jwtPayload: JwtPayload) {
-    return this.userRepository.findOne({ where: { id: jwtPayload.id } })
+    return this.prisma.user.findFirst({ where: { id: jwtPayload.id } })
   }
 
   async user(id: number) {
-    return this.userRepository.findOne({ where: { id: id } })
+    return this.prisma.user.findFirst({ where: { id: id } })
   }
 
   async updateUser(jwtPayload: JwtPayload, updateUserInput: UpdateUserInput) {
@@ -170,21 +172,16 @@ export class UserService {
 
     if (!cleanInput.id) throw new ValidationException(ErrorMessage.MSG_PARAMETER_REQUIRED)
 
-    const existingUser = await this.userRepository.exists({ where: { id: cleanInput.id } })
+    const existingUser = await this.prisma.user.findFirst({ where: { id: cleanInput.id } })
     if (!existingUser) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_USER)
 
     return { ...updateUserInput, ...cleanInput }
   }
 
   private async txUpdateUser(cleanInput: UpdateUserInput) {
-    return this.userRepository.manager.transaction(async (manager) => {
-      const existingUser = await manager.findOne(User, {
-        where: { id: cleanInput.id },
-      })
-
-      const updatedUser = manager.merge(User, existingUser, cleanInput)
-
-      return await manager.save(User, updatedUser)
+    return this.prisma.user.update({
+      where: { id: cleanInput.id },
+      data: cleanInput,
     })
   }
 
@@ -193,7 +190,7 @@ export class UserService {
 
     if (!payload) throw new InvalidTokenException(ErrorMessage.MSG_INVALID_TOKEN)
 
-    const user = await this.userRepository.findOne({ where: { id: payload.id, state: UserState.ACTIVE } })
+    const user = await this.prisma.user.findFirst({ where: { id: payload.id, state: UserState.ACTIVE } })
 
     if (!user) throw new NotFoundException(ErrorMessage.MSG_NOT_FOUND_USER)
 

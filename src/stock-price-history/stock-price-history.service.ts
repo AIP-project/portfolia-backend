@@ -1,22 +1,18 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
-import { StockSummary } from "../stock-summary/entities"
 import { HttpService } from "@nestjs/axios"
 import { ConfigService } from "@nestjs/config"
-import { StockPriceHistory } from "./entities"
 import { firstValueFrom } from "rxjs"
 import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
 import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
+import { PrismaService } from "../common/prisma"
 
 @Injectable()
 export class StockPriceHistoryService {
   private readonly logger = new Logger(StockPriceHistoryService.name)
 
   constructor(
-    @InjectRepository(StockPriceHistory) private readonly stockPriceHistoryRepository: Repository<StockPriceHistory>,
-    @InjectRepository(StockSummary) private readonly stockSummaryRepository: Repository<StockSummary>,
+    private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {}
@@ -24,18 +20,25 @@ export class StockPriceHistoryService {
   async updateStockPrice() {
     const nestConfig = this.configService.get<NestConfig>("nest")!
     if (nestConfig.environment === "local") {
-      return
+      return "Local environment, skipping stock price update."
     }
 
-    const distinctStockGroups = await this.stockSummaryRepository
-      .createQueryBuilder("stockSummary")
-      .select("stockSummary.symbol", "symbol")
-      .addSelect("stockSummary.stockCompanyCode", "stockCompanyCode")
-      .where("stockSummary.type = :type", { type: "SUMMARY" })
-      .andWhere("stockSummary.isDelete = :isDelete", { isDelete: false })
-      .groupBy("stockSummary.symbol")
-      .addGroupBy("stockSummary.stockCompanyCode")
-      .getRawMany()
+    const distinctStockGroups = await this.prisma.stockSummary.findMany({
+      where: {
+        type: "SUMMARY",
+        isDelete: false,
+      },
+      select: {
+        symbol: true,
+        stockCompanyCode: true,
+      },
+      distinct: ["symbol", "stockCompanyCode"],
+    })
+
+    if (distinctStockGroups.length === 0) {
+      this.logger.warn("No distinct stock groups found to update.")
+      return "No distinct stock groups found."
+    }
 
     const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
 
@@ -69,7 +72,9 @@ export class StockPriceHistoryService {
       })
     }
 
-    await this.stockPriceHistoryRepository.save(bulkStockPriceHistory)
+    await this.prisma.stockPriceHistory.createMany({
+      data: bulkStockPriceHistory,
+    })
 
     return "success"
   }
@@ -79,12 +84,12 @@ export class StockPriceHistoryService {
       return []
     }
 
-    const maxIdsResult = await this.stockPriceHistoryRepository
-      .createQueryBuilder("s")
-      .select("MAX(s.id)", "max_id")
-      .where("s.symbol IN (:...symbols)", { symbols })
-      .groupBy("s.symbol")
-      .getRawMany()
+    const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>`
+      SELECT MAX(id) as max_id
+      FROM stock_price_history
+      WHERE symbol IN (${symbols.map((s) => `'${s}'`).join(",")})
+      GROUP BY symbol
+    `
 
     if (maxIdsResult.length === 0) {
       return []
@@ -92,9 +97,12 @@ export class StockPriceHistoryService {
 
     const latestIds = maxIdsResult.map((result) => result.max_id)
 
-    return this.stockPriceHistoryRepository
-      .createQueryBuilder("sph")
-      .where("sph.id IN (:...latestIds)", { latestIds })
-      .getMany()
+    return this.prisma.stockPriceHistory.findMany({
+      where: {
+        id: {
+          in: latestIds,
+        },
+      },
+    })
   }
 }

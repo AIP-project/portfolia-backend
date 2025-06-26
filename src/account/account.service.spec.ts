@@ -1,7 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing"
 import { AccountService } from "./account.service"
-import { getRepositoryToken } from "@nestjs/typeorm"
-import { Account } from "./entities/account.entity"
+import { Account } from "./dto/accounts.model"
 import {
   AccountType,
   CurrencyType,
@@ -11,9 +10,10 @@ import {
   LocationType,
   UserRole,
 } from "../common"
+import { PrismaService } from "../common/prisma"
 import { AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
-import { BankSummary } from "../bank-summary/entities"
-import { createMockRepository, mockEntityManager, resetAllMocks } from "../../test/mock"
+import { BankSummary } from "../bank-summary/dto/bank-summary.model"
+import { createMockPrismaService, resetAllMocks } from "../../test/mock"
 
 import {
   generateMockAccount,
@@ -27,15 +27,15 @@ import {
 describe("AccountService", () => {
   let service: AccountService
 
-  const mockAccountRepository = createMockRepository()
+  const mockPrismaService = createMockPrismaService()
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AccountService,
         {
-          provide: getRepositoryToken(Account),
-          useValue: mockAccountRepository,
+          provide: PrismaService,
+          useValue: mockPrismaService,
         },
       ],
     }).compile()

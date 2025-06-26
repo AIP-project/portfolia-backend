@@ -1,0 +1,386 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int          @id @default(autoincrement())
+  name       String
+  password   String?
+  email      String       @unique
+  phone      String?
+  profileImg String?
+  role       UserRole     @default(USER)
+  currency   CurrencyType @default(KRW)
+  state      UserState    @default(ACTIVE)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  accounts Account[]
+
+  @@map("user")
+}
+
+model Account {
+  id        Int          @id @default(autoincrement())
+  nickName  String
+  type      AccountType  @default(ETC)
+  currency  CurrencyType @default(KRW)
+  note      String?
+  isDelete  Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  userId    Int
+
+  user                    User                     @relation(fields: [userId], references: [id])
+  bankTransactions        BankTransaction[]
+  bankSummary             BankSummary?
+  stockTransactions       StockTransaction[]
+  stockSummaries          StockSummary[]
+  coinTransactions        CoinTransaction[]
+  coinSummaries           CoinSummary[]
+  etcTransactions         EtcTransaction[]
+  etcSummary              EtcSummary?
+  liabilitiesTransactions LiabilitiesTransaction[]
+  liabilitiesSummary      LiabilitiesSummary?
+
+  @@map("account")
+}
+
+model BankTransaction {
+  id              Int             @id @default(autoincrement())
+  transactionDate DateTime
+  name            String?
+  description     String?
+  amount          Decimal         @default(0) @db.Decimal(20, 3)
+  currency        CurrencyType?
+  type            TransactionType @default(DEPOSIT)
+  note            String?
+  isDelete        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  accountId       Int
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@map("bank_transaction")
+}
+
+model BankSummary {
+  id                    Int           @id @default(autoincrement())
+  name                  String?
+  accountNumber         String
+  totalDepositAmount    Decimal       @default(0) @db.Decimal(20, 10)
+  totalWithdrawalAmount Decimal       @default(0) @db.Decimal(20, 10)
+  balance               Decimal       @default(0) @db.Decimal(20, 10)
+  currency              CurrencyType?
+  isDelete              Boolean       @default(false)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  accountId             Int           @unique
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@map("bank_summary")
+}
+
+model CoinTransaction {
+  id              Int             @id @default(autoincrement())
+  transactionDate DateTime
+  name            String?
+  symbol          String?
+  slug            String?
+  quantity        Decimal         @default(0) @db.Decimal(25, 12)
+  price           Decimal         @default(0) @db.Decimal(25, 12)
+  amount          Decimal         @default(0) @db.Decimal(25, 12)
+  fee             Decimal         @default(0) @db.Decimal(25, 12)
+  currency        CurrencyType?
+  type            TransactionType @default(BUY)
+  note            String?
+  isDelete        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  accountId       Int
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@index([symbol])
+  @@map("coin_transaction")
+}
+
+model CoinSummary {
+  id            Int           @id @default(autoincrement())
+  name          String?
+  accountNumber String?
+  symbol        String?
+  slug          String?
+  quantity      Decimal       @default(0) @db.Decimal(25, 12)
+  amount        Decimal       @default(0) @db.Decimal(25, 12)
+  currency      CurrencyType?
+  type          SummaryType   @default(CASH)
+  isDelete      Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  accountId     Int
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@unique([accountId, type, symbol, currency], name: "accountId_type_symbol_currency")
+  @@index([symbol])
+  @@map("coin_summary")
+}
+
+model StockTransaction {
+  id              Int             @id @default(autoincrement())
+  transactionDate DateTime
+  name            String?
+  symbol          String?
+  quantity        Decimal         @default(0) @db.Decimal(20, 10)
+  price           Decimal         @default(0) @db.Decimal(20, 10)
+  amount          Decimal         @default(0) @db.Decimal(20, 10)
+  fee             Decimal         @default(0) @db.Decimal(20, 10)
+  currency        CurrencyType?
+  type            TransactionType @default(BUY)
+  note            String?
+  isDelete        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  accountId       Int
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@index([symbol])
+  @@map("stock_transaction")
+}
+
+model StockSummary {
+  id                Int           @id @default(autoincrement())
+  name              String?
+  accountNumber     String?
+  symbol            String?
+  stockCompanyCode  String?
+  quantity          Decimal       @default(0) @db.Decimal(20, 10)
+  amount            Decimal       @default(0) @db.Decimal(20, 10)
+  currency          CurrencyType?
+  market            String?
+  logoImageUrl      String?
+  type              SummaryType   @default(CASH)
+  isDelete          Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  accountId         Int
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@unique([accountId, type, symbol], name: "accountId_type_symbol")
+  @@index([symbol])
+  @@map("stock_summary")
+}
+
+model EtcTransaction {
+  id              Int             @id @default(autoincrement())
+  transactionDate DateTime
+  name            String
+  purchasePrice   Decimal         @db.Decimal(15, 5)
+  currentPrice    Decimal?        @db.Decimal(15, 5)
+  operation       String?
+  currency        CurrencyType?
+  note            String?
+  isComplete      Boolean         @default(false)
+  isDelete        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  accountId       Int
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@map("etc_transaction")
+}
+
+model EtcSummary {
+  id                    Int           @id @default(autoincrement())
+  name                  String?
+  accountNumber         String?
+  totalDepositAmount    Decimal       @default(0) @db.Decimal(20, 10)
+  totalWithdrawalAmount Decimal       @default(0) @db.Decimal(20, 10)
+  balance               Decimal       @default(0) @db.Decimal(20, 10)
+  purchasePrice         Decimal       @default(0) @db.Decimal(15, 5)
+  currentPrice          Decimal?      @db.Decimal(15, 5)
+  count                 Int           @default(0)
+  currency              CurrencyType?
+  isDelete              Boolean       @default(false)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  accountId             Int           @unique
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@map("etc_summary")
+}
+
+model LiabilitiesTransaction {
+  id              Int             @id @default(autoincrement())
+  transactionDate DateTime
+  name            String
+  amount          Decimal         @default(0) @db.Decimal(15, 5)
+  remainingAmount Decimal?        @db.Decimal(15, 5)
+  rate            Decimal         @default(0) @db.Decimal(15, 5)
+  isYearly        Boolean         @default(true)
+  operation       String?
+  currency        CurrencyType?
+  note            String?
+  repaymentDate   DateTime?
+  isComplete      Boolean         @default(false)
+  isDelete        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  accountId       Int
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@map("liabilities_transaction")
+}
+
+model LiabilitiesSummary {
+  id                    Int           @id @default(autoincrement())
+  name                  String?
+  accountNumber         String?
+  totalDepositAmount    Decimal       @default(0) @db.Decimal(20, 10)
+  totalWithdrawalAmount Decimal       @default(0) @db.Decimal(20, 10)
+  balance               Decimal       @default(0) @db.Decimal(20, 10)
+  amount                Decimal       @default(0) @db.Decimal(15, 5)
+  remainingAmount       Decimal?      @db.Decimal(15, 5)
+  count                 Int           @default(0)
+  currency              CurrencyType?
+  isDelete              Boolean       @default(false)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  accountId             Int           @unique
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@map("liabilities_summary")
+}
+
+model StockPriceHistory {
+  id         Int      @id @default(autoincrement())
+  symbol     String
+  currency   String?
+  base       Decimal  @default(0) @db.Decimal(20, 10)
+  close      Decimal  @default(0) @db.Decimal(20, 10)
+  volume     Decimal  @default(0) @db.Decimal(20, 0)
+  changeType String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([symbol, id])
+  @@index([symbol])
+  @@map("stock_price_history")
+}
+
+model CoinPriceHistory {
+  id               Int       @id @default(autoincrement())
+  symbol           String
+  slug             String?
+  currency         String?
+  price            Decimal   @default(0) @db.Decimal(25, 12)
+  marketCap        Decimal?  @db.Decimal(25, 12)
+  volumeChange24h  Decimal?  @db.Decimal(25, 12)
+  lastUpdated      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([symbol, id])
+  @@index([symbol])
+  @@map("coin_price_history")
+}
+
+model ExchangeRate {
+  id            Int      @id @default(autoincrement())
+  base          String
+  exchangeRates Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("exchange_rate")
+}
+
+enum UserRole {
+  USER
+  MANAGER
+  ADMIN
+}
+
+enum UserState {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+  BANNED
+  DORMANT
+  DELETED
+}
+
+enum AccountType {
+  BANK
+  STOCK
+  COIN
+  ETC
+  LIABILITIES
+}
+
+enum CurrencyType {
+  KRW
+  USD
+  EUR
+  JPY
+  CNY
+  GBP
+  AUD
+  CAD
+  CHF
+  HKD
+  SGD
+  SEK
+  NOK
+  MXN
+  NZD
+  TRY
+  BRL
+  TWD
+  DKK
+  PLN
+  THB
+  ILS
+  PHP
+  CZK
+  AED
+  COP
+  SAR
+  CLP
+  MYR
+  RON
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER
+}
+
+enum SummaryType {
+  CASH
+  SUMMARY
+}

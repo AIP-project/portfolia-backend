@@ -1,29 +1,14 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { FindOptionsWhere, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from "typeorm"
-import { Account } from "../account/entities/account.entity"
-import {
-  AccountType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  parseISOString,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, parseISOString, ValidationException } from "../common"
 import { CreateEtcTransactionInput, EtcTransactionInput, EtcTransactionsArgs, UpdateEtcTransactionInput } from "./dto"
-import { EtcTransaction } from "./entities"
-import { EtcSummary } from "../etc-summary/entities"
+import { PrismaService } from "../common/prisma"
+import { AccountType, Prisma, UserRole } from "@prisma/client"
 
 @Injectable()
 export class EtcTransactionService {
   private readonly logger = new Logger(EtcTransactionService.name)
 
-  constructor(
-    @InjectRepository(EtcTransaction) private readonly etcTransactionRepository: Repository<EtcTransaction>,
-    @InjectRepository(EtcSummary) private readonly etcSummaryRepository: Repository<EtcSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private async commonCheckEtcTransaction(jwtPayload: JwtPayload, etcTransactionInput: EtcTransactionInput) {
     const cleanInput = new EtcTransactionInput()
@@ -35,7 +20,7 @@ export class EtcTransactionService {
 
     if (etcTransactionInput.transactionDate) parseISOString(etcTransactionInput.transactionDate)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: etcTransactionInput.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -43,7 +28,7 @@ export class EtcTransactionService {
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const existSummary = await this.etcSummaryRepository.findOne({
+    const existSummary = await this.prisma.etcSummary.findUnique({
       where: { accountId: etcTransactionInput.accountId },
     })
 
@@ -53,27 +38,55 @@ export class EtcTransactionService {
   }
 
   async createEtcTransaction(jwtPayload: JwtPayload, createEtcTransactionInput: CreateEtcTransactionInput) {
-    const cleanInput = await this.cleanEtcTransaction(jwtPayload, createEtcTransactionInput)
+    const cleanInput = await this.cleanCreateEtcTransaction(jwtPayload, createEtcTransactionInput)
     return this.txCreateEtcTransaction(cleanInput)
   }
 
-  private async cleanEtcTransaction(jwtPayload: JwtPayload, createEtcTransactionInput: CreateEtcTransactionInput) {
+  private async cleanCreateEtcTransaction(
+    jwtPayload: JwtPayload,
+    createEtcTransactionInput: CreateEtcTransactionInput,
+  ) {
     const cleanInput = await this.commonCheckEtcTransaction(jwtPayload, createEtcTransactionInput)
 
-    cleanInput.existSummary.count += 1
-    cleanInput.existSummary.purchasePrice += cleanInput.purchasePrice
-    cleanInput.existSummary.currentPrice += cleanInput.currentPrice
+    const { existSummary, ...restCleanInput } = cleanInput
 
-    return { ...createEtcTransactionInput, ...cleanInput }
+    const summaryUpdateData: {
+      where: Prisma.EtcSummaryWhereUniqueInput
+      data: Prisma.EtcSummaryUncheckedUpdateInput
+    } = {
+      where: { id: existSummary.id },
+      data: {
+        count: {
+          increment: 1,
+        },
+        purchasePrice: {
+          increment: Number(cleanInput.purchasePrice),
+        },
+        currentPrice: {
+          increment: cleanInput.currentPrice ? Number(cleanInput.currentPrice) : 0,
+        },
+      },
+    }
+
+    return { ...createEtcTransactionInput, ...restCleanInput, summaryUpdateData }
   }
 
-  private async txCreateEtcTransaction(cleanInput: CreateEtcTransactionInput & { existSummary: EtcSummary }) {
-    return this.etcTransactionRepository.manager.transaction(async (manager) => {
-      const { existSummary, ...input } = cleanInput
+  private async txCreateEtcTransaction(
+    cleanInput: CreateEtcTransactionInput & {
+      summaryUpdateData: {
+        where: Prisma.EtcSummaryWhereUniqueInput
+        data: Prisma.EtcSummaryUncheckedUpdateInput
+      }
+    },
+  ) {
+    return this.prisma.$transaction(async (prisma) => {
+      const { summaryUpdateData, ...input } = cleanInput
+      const etcTransaction = await prisma.etcTransaction.create({ data: input })
 
-      const etcTransaction = await manager.save(EtcTransaction, input)
-
-      await manager.save(EtcSummary, existSummary)
+      await prisma.etcSummary.update({
+        where: summaryUpdateData.where,
+        data: summaryUpdateData.data,
+      })
 
       return etcTransaction
     })
@@ -92,41 +105,48 @@ export class EtcTransactionService {
     } = etcTransactionsArgs
     const skip = (page - 1) * take
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const whereConditions: FindOptionsWhere<EtcTransaction> = {
+    const whereConditions: any = {
       isDelete: false,
       accountId,
     }
 
-    if (name) whereConditions.name = ILike(`%${name}%`)
-    if (note) whereConditions.note = ILike(`%${note}%`)
-    if (fromTransactionDate) whereConditions.transactionDate = MoreThanOrEqual(new Date(fromTransactionDate))
-    if (toTransactionDate) whereConditions.transactionDate = LessThanOrEqual(new Date(toTransactionDate))
+    if (name) whereConditions.name = { contains: name }
+    if (note) whereConditions.note = { contains: note }
+    if (fromTransactionDate && toTransactionDate) {
+      whereConditions.transactionDate = {
+        gte: new Date(fromTransactionDate),
+        lte: new Date(toTransactionDate),
+      }
+    } else if (fromTransactionDate) {
+      whereConditions.transactionDate = { gte: new Date(fromTransactionDate) }
+    } else if (toTransactionDate) {
+      whereConditions.transactionDate = { lte: new Date(toTransactionDate) }
+    }
 
     // Order by 설정
-    const order =
+    const orderBy =
       sortBy.length > 0
-        ? sortBy.reduce(
-            (acc, { field, direction }) => ({
-              ...acc,
-              [field]: direction ? "ASC" : "DESC",
-            }),
-            {},
-          )
-        : { createdAt: "ASC" } // 기본 정렬
+        ? sortBy.map(({ field, direction }) => ({
+            [field]: direction ? "asc" : "desc",
+          }))
+        : [{ createdAt: "asc" }] // 기본 정렬
 
-    const [etcTransactions, total] = await this.etcTransactionRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [etcTransactions, total] = await Promise.all([
+      this.prisma.etcTransaction.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.etcTransaction.count({ where: whereConditions }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
@@ -143,10 +163,10 @@ export class EtcTransactionService {
   }
 
   async etcTransaction(jwtPayload: JwtPayload, id: number) {
-    const etcTransaction = await this.etcTransactionRepository.findOne({ where: { id: id, isDelete: false } })
+    const etcTransaction = await this.prisma.etcTransaction.findFirst({ where: { id: id, isDelete: false } })
     if (!etcTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ETC_TRANSACTION)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: etcTransaction.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -165,41 +185,88 @@ export class EtcTransactionService {
     jwtPayload: JwtPayload,
     updateEtcTransactionInput: UpdateEtcTransactionInput,
   ) {
-    const existingEtcTransaction = await this.etcTransactionRepository.findOne({
+    // 기존 트랜잭션 조회
+    const existingEtcTransaction = await this.prisma.etcTransaction.findFirst({
       where: { id: updateEtcTransactionInput.id, isDelete: false },
     })
+
     if (!existingEtcTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ETC_TRANSACTION)
 
+    // 공통 체크 수행
     const cleanInput = await this.commonCheckEtcTransaction(jwtPayload, {
       ...updateEtcTransactionInput,
       accountId: existingEtcTransaction.accountId,
     })
 
-    if (cleanInput.isDelete) {
-      cleanInput.existSummary.count -= 1
-      cleanInput.existSummary.purchasePrice -= existingEtcTransaction.purchasePrice
-      cleanInput.existSummary.currentPrice -= existingEtcTransaction.currentPrice
-    } else {
-      cleanInput.existSummary.purchasePrice += cleanInput.purchasePrice - existingEtcTransaction.purchasePrice
-      cleanInput.existSummary.currentPrice += cleanInput.currentPrice - existingEtcTransaction.currentPrice
+    const { existSummary, ...restCleanInput } = cleanInput
+
+    // increment 방식으로 summary 업데이트 데이터 생성
+    const summaryUpdateData: {
+      where: Prisma.EtcSummaryWhereUniqueInput
+      data: Prisma.EtcSummaryUncheckedUpdateInput
+    } = {
+      where: { id: existSummary.id },
+      data: {},
     }
 
-    return { ...updateEtcTransactionInput, ...cleanInput, existingEtcTransaction }
+    // 기존 트랜잭션 값들
+    const oldPurchasePrice = Number(existingEtcTransaction.purchasePrice)
+    const oldCurrentPrice = Number(existingEtcTransaction.currentPrice || 0)
+    const newPurchasePrice = Number(cleanInput.purchasePrice)
+    const newCurrentPrice = Number(cleanInput.currentPrice || 0)
+
+    if (cleanInput.isDelete) {
+      // 삭제 케이스: 기존 트랜잭션 값들을 차감
+      summaryUpdateData.data = {
+        count: {
+          increment: -1,
+        },
+        purchasePrice: {
+          increment: -oldPurchasePrice,
+        },
+        currentPrice: {
+          increment: -oldCurrentPrice,
+        },
+      }
+    } else {
+      // 업데이트 케이스: 차이값만큼 증감
+      summaryUpdateData.data = {
+        purchasePrice: {
+          increment: newPurchasePrice - oldPurchasePrice,
+        },
+        currentPrice: {
+          increment: newCurrentPrice - oldCurrentPrice,
+        },
+      }
+    }
+
+    return {
+      ...updateEtcTransactionInput,
+      ...restCleanInput,
+      summaryUpdateData,
+    }
   }
 
-  private txUpdateEtcTransaction(
-    cleanInput: UpdateEtcTransactionInput & { existSummary: EtcSummary } & {
-      existingEtcTransaction: EtcTransaction
+  private async txUpdateEtcTransaction(
+    cleanInput: UpdateEtcTransactionInput & {
+      summaryUpdateData: {
+        where: Prisma.EtcSummaryWhereUniqueInput
+        data: Prisma.EtcSummaryUncheckedUpdateInput
+      }
     },
   ) {
-    return this.etcTransactionRepository.manager.transaction(async (manager) => {
-      const { existingEtcTransaction, existSummary, ...input } = cleanInput
+    return this.prisma.$transaction(async (prisma) => {
+      const { summaryUpdateData, ...input } = cleanInput
 
-      const updatedEtcTransaction = manager.merge(EtcTransaction, existingEtcTransaction, input)
+      const etcTransaction = await prisma.etcTransaction.update({
+        where: { id: input.id },
+        data: input,
+      })
 
-      const etcTransaction = await manager.save(EtcTransaction, updatedEtcTransaction)
-
-      await manager.save(EtcSummary, existSummary)
+      await prisma.etcSummary.update({
+        where: summaryUpdateData.where,
+        data: summaryUpdateData.data,
+      })
 
       return etcTransaction
     })

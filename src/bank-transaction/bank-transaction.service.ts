@@ -1,35 +1,19 @@
 import { Injectable, Logger } from "@nestjs/common"
-import {
-  AccountType,
-  ErrorMessage,
-  ForbiddenException,
-  JwtPayload,
-  parseISOString,
-  TransactionType,
-  UserRole,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, parseISOString, ValidationException } from "../common"
 import {
   BankTransactionInput,
   BankTransactionsArgs,
   CreateBankTransactionInput,
   UpdateBankTransactionInput,
 } from "./dto"
-import { InjectRepository } from "@nestjs/typeorm"
-import { FindOptionsWhere, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from "typeorm"
-import { Account } from "../account/entities/account.entity"
-import { BankTransaction } from "./entities"
-import { BankSummary } from "../bank-summary/entities"
+import { PrismaService } from "../common/prisma"
+import { AccountType, Prisma, TransactionType, UserRole } from "@prisma/client"
 
 @Injectable()
 export class BankTransactionService {
   private readonly logger = new Logger(BankTransactionService.name)
 
-  constructor(
-    @InjectRepository(BankTransaction) private readonly bankTransactionRepository: Repository<BankTransaction>,
-    @InjectRepository(BankSummary) private readonly bankSummaryRepository: Repository<BankSummary>,
-    @InjectRepository(Account) private readonly accountRepository: Repository<Account>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private async commonCheckBankTransaction(jwtPayload: JwtPayload, bankTransactionInput: BankTransactionInput) {
     const cleanInput = new BankTransactionInput()
@@ -38,7 +22,7 @@ export class BankTransactionService {
 
     if (bankTransactionInput.transactionDate) parseISOString(bankTransactionInput.transactionDate)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: bankTransactionInput.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -46,7 +30,7 @@ export class BankTransactionService {
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const existSummary = await this.bankSummaryRepository.findOne({
+    const existSummary = await this.prisma.bankSummary.findUnique({
       where: { accountId: bankTransactionInput.accountId },
     })
 
@@ -56,38 +40,59 @@ export class BankTransactionService {
   }
 
   async createBankTransaction(jwtPayload: JwtPayload, createBankTransactionInput: CreateBankTransactionInput) {
-    const cleanInput = await this.cleanBankTransaction(jwtPayload, createBankTransactionInput)
+    const cleanInput = await this.cleanCreateBankTransaction(jwtPayload, createBankTransactionInput)
     return this.txCreateBankTransaction(cleanInput)
   }
 
-  private async cleanBankTransaction(jwtPayload: JwtPayload, createBankTransactionInput: CreateBankTransactionInput) {
+  private async cleanCreateBankTransaction(
+    jwtPayload: JwtPayload,
+    createBankTransactionInput: CreateBankTransactionInput,
+  ) {
     const cleanInput = await this.commonCheckBankTransaction(jwtPayload, createBankTransactionInput)
 
-    if (cleanInput.type === TransactionType.DEPOSIT) {
-      cleanInput.existSummary.totalDepositAmount += cleanInput.amount
-      cleanInput.existSummary.balance += cleanInput.amount
-    } else {
-      cleanInput.existSummary.totalWithdrawalAmount += cleanInput.amount
-      cleanInput.existSummary.balance -= cleanInput.amount
+    const { existSummary, ...restCleanInput } = cleanInput
+
+    const sign = cleanInput.type === TransactionType.DEPOSIT ? 1 : -1
+
+    const summaryUpdateData: {
+      where: Prisma.BankSummaryWhereUniqueInput
+      data: Prisma.BankSummaryUncheckedUpdateInput
+    } = {
+      where: { id: existSummary.id },
+      data: {},
     }
 
-    return { ...createBankTransactionInput, ...cleanInput }
+    summaryUpdateData.data = {
+      totalDepositAmount: {
+        increment: cleanInput.type === TransactionType.DEPOSIT ? Number(cleanInput.amount) : 0,
+      },
+      totalWithdrawalAmount: {
+        increment: cleanInput.type === TransactionType.DEPOSIT ? 0 : Number(cleanInput.amount),
+      },
+      balance: {
+        increment: sign * Number(cleanInput.amount),
+      },
+    }
+
+    return { ...createBankTransactionInput, ...restCleanInput, summaryUpdateData }
   }
 
-  private async txCreateBankTransaction(cleanInput: CreateBankTransactionInput & { existSummary: BankSummary }) {
-    return this.bankTransactionRepository.manager.transaction(async (manager) => {
-      const { existSummary, ...input } = cleanInput
-      const bankTransaction = await manager.save(BankTransaction, input)
+  private async txCreateBankTransaction(
+    cleanInput: CreateBankTransactionInput & {
+      summaryUpdateData: {
+        where: Prisma.BankSummaryWhereUniqueInput
+        data: Prisma.BankSummaryUncheckedUpdateInput
+      }
+    },
+  ) {
+    return this.prisma.$transaction(async (prisma) => {
+      const { summaryUpdateData, ...input } = cleanInput
+      const bankTransaction = await prisma.bankTransaction.create({ data: input })
 
-      await manager.update(
-        BankSummary,
-        {
-          accountId: bankTransaction.accountId,
-        },
-        {
-          ...existSummary,
-        },
-      )
+      await prisma.bankSummary.update({
+        where: summaryUpdateData.where,
+        data: summaryUpdateData.data,
+      })
 
       return bankTransaction
     })
@@ -107,42 +112,49 @@ export class BankTransactionService {
     } = bankTransactionsArgs
     const skip = (page - 1) * take
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     if (existingAccount.userId !== jwtPayload.id && jwtPayload.role !== UserRole.ADMIN)
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
 
-    const whereConditions: FindOptionsWhere<BankTransaction> = {
+    const whereConditions: any = {
       isDelete: false,
       accountId,
     }
 
-    if (name) whereConditions.name = ILike(`%${name}%`)
-    if (note) whereConditions.note = ILike(`%${note}%`)
+    if (name) whereConditions.name = { contains: name }
+    if (note) whereConditions.note = { contains: note }
     if (type) whereConditions.type = type
-    if (fromTransactionDate) whereConditions.transactionDate = MoreThanOrEqual(new Date(fromTransactionDate))
-    if (toTransactionDate) whereConditions.transactionDate = LessThanOrEqual(new Date(toTransactionDate))
+    if (fromTransactionDate && toTransactionDate) {
+      whereConditions.transactionDate = {
+        gte: new Date(fromTransactionDate),
+        lte: new Date(toTransactionDate),
+      }
+    } else if (fromTransactionDate) {
+      whereConditions.transactionDate = { gte: new Date(fromTransactionDate) }
+    } else if (toTransactionDate) {
+      whereConditions.transactionDate = { lte: new Date(toTransactionDate) }
+    }
 
     // Order by 설정
-    const order =
+    const orderBy =
       sortBy.length > 0
-        ? sortBy.reduce(
-            (acc, { field, direction }) => ({
-              ...acc,
-              [field]: direction ? "ASC" : "DESC",
-            }),
-            {},
-          )
-        : { createdAt: "ASC" } // 기본 정렬
+        ? sortBy.map(({ field, direction }) => ({
+            [field]: direction ? "asc" : "desc",
+          }))
+        : [{ createdAt: "asc" }] // 기본 정렬
 
-    const [bankTransactions, total] = await this.bankTransactionRepository.findAndCount({
-      where: whereConditions,
-      skip,
-      take,
-      order,
-    })
+    const [bankTransactions, total] = await Promise.all([
+      this.prisma.bankTransaction.findMany({
+        where: whereConditions,
+        skip,
+        take,
+        orderBy,
+      }),
+      this.prisma.bankTransaction.count({ where: whereConditions }),
+    ])
 
     const totalPages = Math.ceil(total / take)
 
@@ -159,10 +171,10 @@ export class BankTransactionService {
   }
 
   async bankTransaction(jwtPayload: JwtPayload, id: number) {
-    const bankTransaction = await this.bankTransactionRepository.findOne({ where: { id: id, isDelete: false } })
+    const bankTransaction = await this.prisma.bankTransaction.findFirst({ where: { id: id, isDelete: false } })
     if (!bankTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_BANK_TRANSACTION)
 
-    const existingAccount = await this.accountRepository.findOne({
+    const existingAccount = await this.prisma.account.findUnique({
       where: { id: bankTransaction.accountId },
     })
     if (!existingAccount) throw new ValidationException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
@@ -181,58 +193,94 @@ export class BankTransactionService {
     jwtPayload: JwtPayload,
     updateBankTransactionInput: UpdateBankTransactionInput,
   ) {
-    const existingBankTransaction = await this.bankTransactionRepository.findOne({
+    // 기존 트랜잭션 조회
+    const existingBankTransaction = await this.prisma.bankTransaction.findFirst({
       where: { id: updateBankTransactionInput.id, isDelete: false },
     })
+
     if (!existingBankTransaction) throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_BANK_TRANSACTION)
 
+    // 공통 체크 수행
     const cleanInput = await this.commonCheckBankTransaction(jwtPayload, {
       ...updateBankTransactionInput,
       accountId: existingBankTransaction.accountId,
     })
 
+    const { existSummary, ...restCleanInput } = cleanInput
+
+    // create와 동일한 구조로 summaryUpdateData 생성
+    const summaryUpdateData: {
+      where: Prisma.BankSummaryWhereUniqueInput
+      data: Prisma.BankSummaryUncheckedUpdateInput
+    } = {
+      where: { id: existSummary.id },
+      data: {},
+    }
+
+    // 기존 트랜잭션 타입과 금액
+    const oldType = existingBankTransaction.type
+    const oldAmount = Number(existingBankTransaction.amount)
+    const newType = cleanInput.type || oldType // 타입이 없으면 기존 타입 유지
+    const newAmount = Number(cleanInput.amount)
+
     if (cleanInput.isDelete) {
-      if (existingBankTransaction.type === TransactionType.DEPOSIT) {
-        cleanInput.existSummary.totalDepositAmount -= existingBankTransaction.amount
-        cleanInput.existSummary.balance -= existingBankTransaction.amount
-      } else {
-        cleanInput.existSummary.totalWithdrawalAmount -= existingBankTransaction.amount
-        cleanInput.existSummary.balance += existingBankTransaction.amount
+      // 삭제 케이스: 기존 트랜잭션만 롤백
+      summaryUpdateData.data = {
+        totalDepositAmount: {
+          increment: oldType === TransactionType.DEPOSIT ? -oldAmount : 0,
+        },
+        totalWithdrawalAmount: {
+          increment: oldType === TransactionType.DEPOSIT ? 0 : -oldAmount,
+        },
+        balance: {
+          increment: oldType === TransactionType.DEPOSIT ? -oldAmount : oldAmount,
+        },
       }
     } else {
-      if (cleanInput.type === TransactionType.DEPOSIT) {
-        cleanInput.existSummary.totalDepositAmount += cleanInput.amount - existingBankTransaction.amount
-        cleanInput.existSummary.balance += cleanInput.amount - existingBankTransaction.amount
-      } else {
-        cleanInput.existSummary.totalWithdrawalAmount += cleanInput.amount - existingBankTransaction.amount
-        cleanInput.existSummary.balance -= cleanInput.amount - existingBankTransaction.amount
+      // 업데이트 케이스
+      summaryUpdateData.data = {
+        totalDepositAmount: {
+          increment: newType === TransactionType.DEPOSIT ? newAmount - oldAmount : 0,
+        },
+        totalWithdrawalAmount: {
+          increment: newType === TransactionType.DEPOSIT ? 0 : newAmount - oldAmount,
+        },
+        balance: {
+          increment: newType === TransactionType.DEPOSIT ? newAmount - oldAmount : -newAmount + oldAmount,
+        },
       }
     }
 
-    return { ...updateBankTransactionInput, ...cleanInput, existingBankTransaction }
+    return {
+      ...updateBankTransactionInput,
+      ...restCleanInput,
+      summaryUpdateData,
+    }
   }
 
   private async txUpdateBankTransaction(
-    cleanInput: UpdateBankTransactionInput & { existingBankTransaction: BankTransaction } & {
-      existSummary: BankSummary
+    cleanInput: UpdateBankTransactionInput & {
+      summaryUpdateData: {
+        where: Prisma.BankSummaryWhereUniqueInput
+        data: Prisma.BankSummaryUncheckedUpdateInput
+      }
     },
   ) {
-    return this.bankTransactionRepository.manager.transaction(async (manager) => {
-      const { existingBankTransaction, existSummary, ...input } = cleanInput
+    return this.prisma.$transaction(async (prisma) => {
+      const { summaryUpdateData, ...input } = cleanInput
 
-      const updatedBankTransaction = manager.merge(BankTransaction, existingBankTransaction, input)
+      // 1. Bank Transaction 업데이트
+      const bankTransaction = await prisma.bankTransaction.update({
+        where: { id: input.id },
+        data: input,
+      })
 
-      const bankTransaction = await manager.save(BankTransaction, updatedBankTransaction)
+      // 2. Bank Summary 업데이트 (increment 사용)
+      await prisma.bankSummary.update({
+        where: summaryUpdateData.where,
+        data: summaryUpdateData.data,
+      })
 
-      await manager.update(
-        BankSummary,
-        {
-          accountId: bankTransaction.accountId,
-        },
-        {
-          ...existSummary,
-        },
-      )
       return bankTransaction
     })
   }

@@ -1,22 +1,18 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
 import { HttpService } from "@nestjs/axios"
 import { ConfigService } from "@nestjs/config"
-import { CoinPriceHistory } from "./entities"
 import { firstValueFrom } from "rxjs"
 import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
 import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
-import { CoinSummary } from "../coin-summary/entities"
+import { PrismaService } from "../common/prisma"
 
 @Injectable()
 export class CoinPriceHistoryService {
   private readonly logger = new Logger(CoinPriceHistoryService.name)
 
   constructor(
-    @InjectRepository(CoinPriceHistory) private readonly coinPriceHistoryRepository: Repository<CoinPriceHistory>,
-    @InjectRepository(CoinSummary) private readonly coinSummaryRepository: Repository<CoinSummary>,
+    private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {}
@@ -24,24 +20,27 @@ export class CoinPriceHistoryService {
   async updateCoinPrice() {
     const nestConfig = this.configService.get<NestConfig>("nest")!
     if (nestConfig.environment === "local") {
-      return
+      return "Local environment, skipping coin price update."
     }
 
-    const distinctCoinSymbols = await this.coinSummaryRepository
-      .createQueryBuilder("coinSummary")
-      .select("coinSummary.symbol", "symbol")
-      .addSelect("coinSummary.slug", "slug")
-      .where("coinSummary.type = :type", { type: "SUMMARY" })
-      .andWhere("coinSummary.isDelete = :isDelete", { isDelete: false })
-      .groupBy("coinSummary.symbol")
-      .addGroupBy("coinSummary.slug")
-      .getRawMany()
+    const distinctCoinSymbols = await this.prisma.coinSummary.findMany({
+      where: {
+        type: "SUMMARY",
+        isDelete: false,
+      },
+      select: {
+        symbol: true,
+        slug: true,
+      },
+      distinct: ["symbol", "slug"],
+    })
 
     // const slugsString = distinctCoinSymbols.map((item) => item.slug).join(",")
     const symbolsString = distinctCoinSymbols.map((item) => item.symbol).join(",")
 
     if (symbolsString.length === 0) {
-      return
+      this.logger.warn("No distinct coin symbols found to update.")
+      return "No distinct coin symbols found."
     }
 
     const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
@@ -87,7 +86,9 @@ export class CoinPriceHistoryService {
       }
     })
 
-    await this.coinPriceHistoryRepository.save(bulkCoinPriceHistory)
+    await this.prisma.coinPriceHistory.createMany({
+      data: bulkCoinPriceHistory,
+    })
 
     return "success"
   }
@@ -98,12 +99,12 @@ export class CoinPriceHistoryService {
     }
 
     // 1. 각 symbol 별로 가장 큰 id (최신 id)를 조회합니다.
-    const maxIdsResult = await this.coinPriceHistoryRepository
-      .createQueryBuilder("c")
-      .select("MAX(c.id)", "max_id")
-      .where("c.symbol IN (:...symbols)", { symbols })
-      .groupBy("c.symbol")
-      .getRawMany()
+    const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>`
+      SELECT MAX(id) as max_id
+      FROM coin_price_history
+      WHERE symbol IN (${symbols.map((s) => `'${s}'`).join(",")})
+      GROUP BY symbol
+    `
 
     // 결과가 없으면 빈 배열 반환
     if (maxIdsResult.length === 0) {
@@ -114,9 +115,12 @@ export class CoinPriceHistoryService {
     const latestIds = maxIdsResult.map((result) => result.max_id)
 
     // 2. 추출된 id 목록을 사용하여 최종 데이터를 조회합니다.
-    return this.coinPriceHistoryRepository
-      .createQueryBuilder("cph")
-      .where("cph.id IN (:...latestIds)", { latestIds })
-      .getMany()
+    return this.prisma.coinPriceHistory.findMany({
+      where: {
+        id: {
+          in: latestIds,
+        },
+      },
+    })
   }
 }

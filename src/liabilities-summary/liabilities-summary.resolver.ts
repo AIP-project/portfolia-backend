@@ -1,7 +1,7 @@
 import { Args, Mutation, Resolver } from "@nestjs/graphql"
 import { LiabilitiesSummaryService } from "./liabilities-summary.service"
 import { JwtPayload, UserDecoded } from "../common"
-import { LiabilitiesSummary } from "./entities"
+import { LiabilitiesSummary } from "./dto/liabilities-summary.model"
 import { UpdateLiabilitiesSummaryInput } from "./dto"
 
 @Resolver(() => LiabilitiesSummary)
