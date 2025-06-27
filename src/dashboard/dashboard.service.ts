@@ -74,7 +74,7 @@ export class DashboardService {
 
     if (coinSymbols.length > 0) {
       coinPriceHistories = await this.prisma.$queryRaw`
-        SELECT cph1.symbol, cph1.price
+        SELECT cph1.symbol, cph1.price, cph1.currency
         FROM coin_price_history cph1
                INNER JOIN (SELECT symbol, MAX(createdAt) as max_created_at
                            FROM coin_price_history
@@ -86,7 +86,7 @@ export class DashboardService {
     for (const summary of coinSummary) {
       const accountName = summary.account.nickName
 
-      const currentPrice = coinPriceHistories.find((cph) => cph.symbol === summary.symbol)?.price
+      const currentPrice = coinPriceHistories.find((cph) => cph.symbol === summary.symbol)
 
       if (!currentPrice && summary.type !== SummaryType.CASH) {
         console.warn(`⚠️ ${summary.symbol} 코인의 현재 가격을 찾을 수 없습니다.`)
@@ -125,8 +125,9 @@ export class DashboardService {
           unrealizedPnLPercentage: 0,
         })
       } else {
-        const coinValueInUSD = Number(summary.quantity) * Number(currentPrice)
-        const crossRate = defaultCurrencyRate / exchangeRate.USD
+        const coinValueInUSD = Number(summary.quantity) * Number(currentPrice.price)
+        const coinPriceCurrencyRate = currentPrice.currency ? exchangeRate[currentPrice.currency] : 1
+        const crossRate = defaultCurrencyRate / coinPriceCurrencyRate
         amountInDefaultCurrency = coinValueInUSD * crossRate
 
         const existingSummary = assets.find((s) => s.accountId === summary.accountId)
@@ -143,7 +144,7 @@ export class DashboardService {
         assetTotalAmount = addAmount(assetTotalAmount, amountInDefaultCurrency)
 
         const summaryCurrencyRate = summary.currency ? exchangeRate[summary.currency] : 1
-        const crossRateInSummaryCurrency = summaryCurrencyRate / exchangeRate.USD
+        const crossRateInSummaryCurrency = summaryCurrencyRate / coinPriceCurrencyRate
         const coinValueInSummaryCurrency = coinValueInUSD * crossRateInSummaryCurrency
         const unrealizedPnL = coinValueInSummaryCurrency - Number(summary.amount)
         const summaryToDefaultCurrencyRate = defaultCurrencyRate / summaryCurrencyRate
@@ -227,7 +228,8 @@ export class DashboardService {
         })
       } else {
         const stockValue = Number(summary.quantity) * Number(currentPrice.base)
-        const crossRate = defaultCurrencyRate / (currentPrice.currency ? exchangeRate[currentPrice.currency] : 1)
+        const currentPriceCurrencyRate = currentPrice.currency ? exchangeRate[currentPrice.currency] : 1
+        const crossRate = defaultCurrencyRate / currentPriceCurrencyRate
         amountInDefaultCurrency = stockValue * crossRate
 
         const existingSummary = assets.find((s) => s.accountId === summary.accountId)
@@ -245,7 +247,7 @@ export class DashboardService {
 
         const summaryCurrencyRate = summary.currency ? exchangeRate[summary.currency] : 1
         const crossRateInSummaryCurrency =
-          summaryCurrencyRate / (currentPrice.currency ? exchangeRate[currentPrice.currency] : 1)
+          summaryCurrencyRate / currentPriceCurrencyRate
         const stockValueInSummaryCurrency =
           Number(summary.quantity) * Number(currentPrice.base) * crossRateInSummaryCurrency
         const unrealizedPnL = stockValueInSummaryCurrency - Number(summary.amount)
