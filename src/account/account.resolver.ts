@@ -1,7 +1,7 @@
 import { Args, Mutation, Parent, Query, ResolveField, Resolver } from "@nestjs/graphql"
 import { JwtPayload, UserDecoded } from "../common"
 import { AccountService } from "./account.service"
-import { Account, Accounts, AccountsArgs, Allocation, CreateAccountInput, Dashboard, UpdateAccountInput } from "./dto"
+import { Account, Accounts, AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
 import { StockSummaryDataLoader } from "../stock-summary/stock-summary.dataloader"
 import { BankSummary } from "../bank-summary/dto"
 import { CoinSummary } from "../coin-summary/dto"
@@ -67,15 +67,5 @@ export class AccountResolver {
   @ResolveField("liabilitiesSummary", () => LiabilitiesSummary, { nullable: true, description: "부채 요약 정보" })
   async resolveLiabilitiesSummary(@Parent() account: Account) {
     return this.liabilitiesSummaryDataLoader.liabilitiesSummaryByAccountIdsAndCashType.load(account.id)
-  }
-
-  @Query(() => Dashboard, { description: "대시보드 정보" })
-  async dashboard(@UserDecoded() jwtPayload: JwtPayload) {
-    return this.accountService.dashboard(jwtPayload)
-  }
-
-  @Query(() => Allocation, { description: "자산 비율 정보" })
-  async allocation(@UserDecoded() jwtPayload: JwtPayload) {
-    return this.accountService.allocation(jwtPayload)
   }
 }

@@ -24,11 +24,6 @@ export class AccountInput {
   @IsString()
   note?: string
 
-  @Field(() => CurrencyType, { nullable: true, description: "계좌 통화" })
-  @IsOptional()
-  @IsEnum(CurrencyType)
-  currency?: CurrencyType
-
   @Field({ nullable: true, description: "계좌 삭제 여부" })
   @IsOptional()
   @IsBoolean()

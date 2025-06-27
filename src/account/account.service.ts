@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common"
 import { Account, AccountInput, AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
-import { addAmount, ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
 import { PrismaService } from "../common/prisma"
 import { AccountType, Prisma, SummaryType, UserRole } from "@prisma/client"
 
@@ -60,14 +60,14 @@ export class AccountService {
 
       if (account.type === AccountType.BANK) {
         await prisma.bankSummary.create({
-          data: { accountId: account.id, currency: account.currency, ...bankSummary },
+          data: { accountId: account.id, currency: bankSummary.currency, ...bankSummary },
         })
       } else if (account.type === AccountType.STOCK) {
         await prisma.stockSummary.create({
           data: {
             accountId: account.id,
             type: SummaryType.CASH,
-            currency: account.currency,
+            currency: stockSummary.currency,
             ...stockSummary,
           },
         })
@@ -76,17 +76,17 @@ export class AccountService {
           data: {
             accountId: account.id,
             type: SummaryType.CASH,
-            currency: account.currency,
+            currency: coinSummary.currency,
             ...coinSummary,
           },
         })
       } else if (account.type === AccountType.ETC) {
         await prisma.etcSummary.create({
-          data: { accountId: account.id, currency: account.currency },
+          data: { accountId: account.id },
         })
       } else if (account.type === AccountType.LIABILITIES) {
         await prisma.liabilitiesSummary.create({
-          data: { accountId: account.id, currency: account.currency },
+          data: { accountId: account.id },
         })
       }
       return account
@@ -316,348 +316,5 @@ export class AccountService {
       where: { accountId },
       data: { isDelete: true },
     })
-  }
-
-  async resolveBankSummary(payload: JwtPayload, account: Account) {
-    if (account.type !== AccountType.BANK) return null
-    return this.prisma.bankSummary.findFirst({
-      where: {
-        accountId: account.id,
-        account: { userId: payload.id, isDelete: false },
-      },
-    })
-  }
-
-  async resolveStockSummary(payload: JwtPayload, account: Account) {
-    if (account.type !== AccountType.STOCK) return null
-    return this.prisma.stockSummary.findFirst({
-      where: {
-        accountId: account.id,
-        type: SummaryType.CASH,
-        account: { userId: payload.id, isDelete: false },
-      },
-    })
-  }
-
-  async resolveCoinSummary(payload: JwtPayload, account: Account) {
-    if (account.type !== AccountType.COIN) return null
-    return this.prisma.coinSummary.findFirst({
-      where: {
-        accountId: account.id,
-        type: SummaryType.CASH,
-        account: { userId: payload.id, isDelete: false },
-      },
-    })
-  }
-
-  async resolveEtcSummary(payload: JwtPayload, account: Account) {
-    if (account.type !== AccountType.ETC) return null
-    return this.prisma.etcSummary.findFirst({
-      where: {
-        accountId: account.id,
-        account: { userId: payload.id, isDelete: false },
-      },
-    })
-  }
-
-  async resolveLiabilitiesSummary(payload: JwtPayload, account: Account) {
-    if (account.type !== AccountType.LIABILITIES) return null
-    return this.prisma.liabilitiesSummary.findFirst({
-      where: {
-        accountId: account.id,
-        account: { userId: payload.id, isDelete: false },
-      },
-    })
-  }
-
-  async dashboard(jwtPayload: JwtPayload) {
-    // 각 summary 조회 쿼리
-    const coinSummary = await this.prisma.coinSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      include: { account: true },
-    })
-
-    const stockSummary = await this.prisma.stockSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      include: { account: true },
-    })
-
-    const etcSummary = await this.prisma.etcSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      include: { account: true },
-    })
-
-    const liabilitiesSummary = await this.prisma.liabilitiesSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      include: { account: true },
-    })
-
-    const bankSummary = await this.prisma.bankSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-      include: { account: true },
-    })
-
-    const assets = []
-    const liabilities = []
-    const cash = []
-
-    // 총합 계산을 위한 변수
-    let assetTotalAmount = 0
-    let liabilitiesTotalAmount = 0
-    let cashTotalAmount = 0
-
-    const exchangeRateOne = await this.prisma.exchangeRate.findFirst({
-      orderBy: { createdAt: "desc" },
-    })
-    if (!exchangeRateOne)
-      return {
-        asset: [],
-        liabilities: [],
-        cash: [],
-        assetTotalAmount: 0,
-        liabilitiesTotalAmount: 0,
-        cashTotalAmount: 0,
-      }
-
-    const exchangeRate = exchangeRateOne.exchangeRates as Record<string, number>
-
-    const defaultCurrencyRate = exchangeRate[jwtPayload.currency]
-
-    const coinSymbols = coinSummary
-      .filter((summary) => summary.type === SummaryType.SUMMARY)
-      .map((summary) => summary.symbol)
-      .filter(Boolean)
-
-    let coinPriceHistories: any[] = []
-
-    if (coinSymbols.length > 0) {
-      coinPriceHistories = await this.prisma.$queryRaw`
-        SELECT cph1.symbol, cph1.price
-        FROM coin_price_history cph1
-               INNER JOIN (SELECT symbol, MAX(createdAt) as max_created_at
-                           FROM coin_price_history
-                           WHERE symbol IN (${Prisma.join(coinSymbols)})
-                           GROUP BY symbol) cph2 ON cph1.symbol = cph2.symbol AND cph1.createdAt = cph2.max_created_at
-      `
-    }
-
-    for (const summary of coinSummary) {
-      const accountName = summary.account.nickName
-
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      const currentPrice = coinPriceHistories.find((cph) => cph.symbol === summary.symbol)?.price
-      const amountInDefaultCurrency = (currentPrice ? Number(currentPrice) : Number(summary.amount)) * crossRate
-
-      if (summary.type === SummaryType.CASH) {
-        const existingCash = cash.find((s) => s.name === accountName)
-        if (existingCash) {
-          existingCash.amount = addAmount(existingCash.amount, amountInDefaultCurrency)
-        } else {
-          cash.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.COIN })
-        }
-        cashTotalAmount = addAmount(cashTotalAmount, amountInDefaultCurrency)
-      } else {
-        const existingSummary = assets.find((s) => s.name === accountName)
-        if (existingSummary) {
-          existingSummary.amount = addAmount(existingSummary.amount, amountInDefaultCurrency)
-        } else {
-          assets.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.COIN })
-        }
-        assetTotalAmount = addAmount(assetTotalAmount, amountInDefaultCurrency)
-      }
-    }
-
-    const stockSymbols = stockSummary
-      .filter((summary) => summary.type === SummaryType.SUMMARY)
-      .map((summary) => summary.symbol)
-      .filter(Boolean)
-
-    let stockPriceHistories: any[] = []
-
-    if (stockSymbols.length > 0) {
-      stockPriceHistories = await this.prisma.$queryRaw`
-        SELECT sph1.symbol, sph1.base
-        FROM stock_price_history sph1
-               INNER JOIN (SELECT symbol, MAX(createdAt) as max_created_at
-                           FROM stock_price_history
-                           WHERE symbol IN (${Prisma.join(stockSymbols)})
-                           GROUP BY symbol) sph2 ON sph1.symbol = sph2.symbol AND sph1.createdAt = sph2.max_created_at
-      `
-    }
-
-    for (const summary of stockSummary) {
-      const accountName = summary.account.nickName
-
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      const currentPrice = stockPriceHistories.find((sph) => sph.symbol === summary.symbol)?.base
-      const amountInDefaultCurrency = (currentPrice ? Number(currentPrice) : Number(summary.amount)) * crossRate
-
-      if (summary.type === SummaryType.CASH) {
-        const existingCash = cash.find((s) => s.name === accountName)
-        if (existingCash) {
-          existingCash.amount = addAmount(existingCash.amount, amountInDefaultCurrency)
-        } else {
-          cash.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.STOCK })
-        }
-        cashTotalAmount = addAmount(cashTotalAmount, amountInDefaultCurrency)
-      } else {
-        const existingSummary = assets.find((s) => s.name === accountName)
-        if (existingSummary) {
-          existingSummary.amount = addAmount(existingSummary.amount, amountInDefaultCurrency)
-        } else {
-          assets.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.STOCK })
-        }
-        assetTotalAmount = addAmount(assetTotalAmount, amountInDefaultCurrency)
-      }
-    }
-
-    for (const summary of etcSummary) {
-      const accountName = summary.account.nickName
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      const amountInDefaultCurrency = (Number(summary.currentPrice) || Number(summary.purchasePrice)) * crossRate
-
-      const existingSummary = assets.find((s) => s.name === accountName)
-      if (existingSummary) {
-        existingSummary.amount = addAmount(existingSummary.amount, amountInDefaultCurrency)
-      } else {
-        assets.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.ETC })
-      }
-      assetTotalAmount = addAmount(assetTotalAmount, amountInDefaultCurrency)
-    }
-
-    for (const summary of liabilitiesSummary) {
-      const accountName = summary.account.nickName
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      const amountInDefaultCurrency = (Number(summary.remainingAmount) || Number(summary.amount)) * crossRate
-
-      const existingSummary = liabilities.find((s) => s.name === accountName)
-      if (existingSummary) {
-        existingSummary.amount = addAmount(existingSummary.amount, amountInDefaultCurrency)
-      } else {
-        liabilities.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.LIABILITIES })
-      }
-      liabilitiesTotalAmount = addAmount(liabilitiesTotalAmount, amountInDefaultCurrency)
-    }
-
-    for (const summary of bankSummary) {
-      const accountName = summary.account.nickName
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      const amountInDefaultCurrency = Number(summary.balance) * crossRate
-
-      const existingCash = cash.find((s) => s.name === accountName)
-      if (existingCash) {
-        existingCash.amount = addAmount(existingCash.amount, amountInDefaultCurrency)
-      } else {
-        cash.push({ name: accountName, amount: amountInDefaultCurrency, type: AccountType.BANK })
-      }
-      cashTotalAmount = addAmount(cashTotalAmount, amountInDefaultCurrency)
-    }
-
-    const temp = {
-      asset: assets,
-      liabilities: liabilities,
-      cash: cash,
-      assetTotalAmount: assetTotalAmount,
-      liabilitiesTotalAmount: liabilitiesTotalAmount,
-      cashTotalAmount: cashTotalAmount,
-    }
-
-    console.log("Dashboard Summary:", JSON.stringify(temp, null, 2))
-
-    return {
-      asset: assets,
-      liabilities: liabilities,
-      cash: cash,
-      assetTotalAmount: assetTotalAmount,
-      liabilitiesTotalAmount: liabilitiesTotalAmount,
-      cashTotalAmount: cashTotalAmount,
-    }
-  }
-
-  async allocation(jwtPayload: JwtPayload) {
-    const bankSummary = await this.prisma.bankSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-    })
-    const stockSummary = await this.prisma.stockSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-    })
-    const coinSummary = await this.prisma.coinSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-    })
-    const etcSummary = await this.prisma.etcSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-    })
-    const liabilitiesSummary = await this.prisma.liabilitiesSummary.findMany({
-      where: { account: { userId: jwtPayload.id, isDelete: false }, isDelete: false },
-    })
-
-    const exchangeRateOne = await this.prisma.exchangeRate.findFirst({
-      orderBy: { createdAt: "desc" },
-    })
-    if (!exchangeRateOne) return null
-
-    const exchangeRate = exchangeRateOne.exchangeRates as Record<string, number>
-
-    const defaultCurrencyRate = exchangeRate[jwtPayload.currency]
-
-    const totalBank = bankSummary.reduce((acc, summary) => {
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, Number(summary.balance) * crossRate)
-    }, 0)
-    const totalStock = stockSummary.reduce((acc, summary) => {
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, Number(summary.amount) * crossRate)
-    }, 0)
-    const totalCoin = coinSummary.reduce((acc, summary) => {
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, Number(summary.amount) * crossRate)
-    }, 0)
-    const totalEtc = etcSummary.reduce((acc, summary) => {
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, (Number(summary.currentPrice) || Number(summary.purchasePrice)) * crossRate)
-    }, 0)
-    const totalLiabilities = liabilitiesSummary.reduce((acc, summary) => {
-      let summaryCurrencyRate: number
-      if (summary.currency) summaryCurrencyRate = exchangeRate[summary.currency]
-      else summaryCurrencyRate = 1
-      const crossRate = defaultCurrencyRate / summaryCurrencyRate
-      return addAmount(acc, (Number(summary.remainingAmount) || Number(summary.amount)) * crossRate)
-    }, 0)
-
-    return {
-      bank: totalBank,
-      stock: totalStock,
-      coin: totalCoin,
-      etc: totalEtc,
-      liabilities: totalLiabilities,
-    }
   }
 }

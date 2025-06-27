@@ -12,9 +12,6 @@ export class Account {
   @Field(() => AccountType, { description: "계좌 타입" })
   type!: AccountType
 
-  @Field(() => CurrencyType, { description: "기본 통화" })
-  currency!: CurrencyType
-
   @Field({ description: "비고", nullable: true })
   note?: string
 
