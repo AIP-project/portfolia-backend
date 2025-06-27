@@ -1,5 +1,5 @@
 import { Field, InputType, OmitType } from "@nestjs/graphql"
-import { IsEnum, IsOptional, IsString } from "class-validator"
+import { IsEnum, IsString } from "class-validator"
 import { BankSummaryInput } from "./bank-summary.input"
 import { CurrencyType } from "@prisma/client"
 

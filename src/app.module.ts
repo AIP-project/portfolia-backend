@@ -29,7 +29,7 @@ import { DistributeLockModule } from "./common/service/distributeLock"
 import { RedisModule, RedisModuleOptions } from "@nestjs-modules/ioredis"
 import { GqlConfigService } from "./common/config/gql-config.service"
 import { PrismaModule } from "./common/prisma"
-import { DashboardModule } from './dashboard/dashboard.module'
+import { DashboardModule } from "./dashboard/dashboard.module"
 
 @Module({
   imports: [

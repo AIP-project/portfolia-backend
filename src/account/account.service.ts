@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common"
-import { Account, AccountInput, AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
+import { AccountInput, AccountsArgs, CreateAccountInput, UpdateAccountInput } from "./dto"
 import { ErrorMessage, ForbiddenException, JwtPayload, ValidationException } from "../common"
 import { PrismaService } from "../common/prisma"
 import { AccountType, Prisma, SummaryType, UserRole } from "@prisma/client"

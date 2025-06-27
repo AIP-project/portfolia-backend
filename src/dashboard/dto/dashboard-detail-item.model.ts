@@ -1,9 +1,9 @@
-import { Field, Float, ObjectType } from "@nestjs/graphql"
+import { Field, Float, Int, ObjectType } from "@nestjs/graphql"
 import { CurrencyType } from "@prisma/client"
 
 @ObjectType({ description: "대시보드 상세 정보 아이템" })
 export class DashboardDetailItem {
-  @Field(() => Number, { description: "계좌 ID" })
+  @Field(() => Int, { description: "계좌 ID" })
   accountId!: number
 
   @Field(() => String, { description: "이름" })

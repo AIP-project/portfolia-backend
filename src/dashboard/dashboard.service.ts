@@ -100,10 +100,6 @@ export class DashboardService {
         const crossRate = defaultCurrencyRate / summaryCurrencyRate
         amountInDefaultCurrency = Number(summary.amount) * crossRate
 
-        console.log(
-          `💰 Cash ${summary.symbol || "Unknown"}: ${summary.amount} ${summary.currency} → ${amountInDefaultCurrency.toFixed(2)} ${jwtPayload.currency} (환율: ${crossRate.toFixed(6)})`,
-        )
-
         const existingCash = cash.find((s) => s.accountId === summary.accountId)
         if (existingCash) {
           existingCash.amount = addAmount(existingCash.amount, amountInDefaultCurrency)
@@ -132,10 +128,6 @@ export class DashboardService {
         const coinValueInUSD = Number(summary.quantity) * Number(currentPrice)
         const crossRate = defaultCurrencyRate / exchangeRate.USD
         amountInDefaultCurrency = coinValueInUSD * crossRate
-
-        console.log(
-          `🪙 Coin ${summary.symbol}: ${summary.quantity}개 × ${currentPrice} USD = $${coinValueInUSD.toFixed(2)} USD → ${amountInDefaultCurrency.toFixed(2)} ${jwtPayload.currency} (환율: ${crossRate.toFixed(6)})`,
-        )
 
         const existingSummary = assets.find((s) => s.accountId === summary.accountId)
         if (existingSummary) {
@@ -209,10 +201,6 @@ export class DashboardService {
         const crossRate = defaultCurrencyRate / summaryCurrencyRate
         amountInDefaultCurrency = Number(summary.amount) * crossRate
 
-        console.log(
-          `💰 Cash ${summary.symbol || "Unknown"}: ${summary.amount} ${summary.currency} → ${amountInDefaultCurrency.toFixed(2)} ${jwtPayload.currency} (환율: ${crossRate.toFixed(6)})`,
-        )
-
         const existingCash = cash.find((s) => s.accountId === summary.accountId)
         if (existingCash) {
           existingCash.amount = addAmount(existingCash.amount, amountInDefaultCurrency)
@@ -238,15 +226,9 @@ export class DashboardService {
           unrealizedPnLPercentage: 0,
         })
       } else {
-        console.log(`smaary`, summary)
-        console.log(`currentPrice`, currentPrice)
         const stockValue = Number(summary.quantity) * Number(currentPrice.base)
         const crossRate = defaultCurrencyRate / (currentPrice.currency ? exchangeRate[currentPrice.currency] : 1)
         amountInDefaultCurrency = stockValue * crossRate
-
-        console.log(
-          `📈 Stock ${summary.symbol}: ${summary.quantity}주 × ${currentPrice.base} ${summary.currency} = ${stockValue.toFixed(2)} ${summary.currency} → ${amountInDefaultCurrency.toFixed(2)} ${jwtPayload.currency} (환율: ${crossRate.toFixed(6)})`,
-        )
 
         const existingSummary = assets.find((s) => s.accountId === summary.accountId)
         if (existingSummary) {
@@ -264,7 +246,8 @@ export class DashboardService {
         const summaryCurrencyRate = summary.currency ? exchangeRate[summary.currency] : 1
         const crossRateInSummaryCurrency =
           summaryCurrencyRate / (currentPrice.currency ? exchangeRate[currentPrice.currency] : 1)
-        const stockValueInSummaryCurrency = Number(summary.quantity) * Number(currentPrice.base) * crossRateInSummaryCurrency
+        const stockValueInSummaryCurrency =
+          Number(summary.quantity) * Number(currentPrice.base) * crossRateInSummaryCurrency
         const unrealizedPnL = stockValueInSummaryCurrency - Number(summary.amount)
         const summaryToDefaultCurrencyRate = defaultCurrencyRate / summaryCurrencyRate
         const unrealizedPnLInDefaultCurrency = unrealizedPnL * summaryToDefaultCurrencyRate
@@ -291,10 +274,6 @@ export class DashboardService {
       const accountCurrencyRate = summary.currency ? exchangeRate[summary.currency] : 1
       const crossRate = defaultCurrencyRate / accountCurrencyRate
       const amountInDefaultCurrency = Number(summary.balance) * crossRate
-
-      console.log(
-        `🏦 Bank ${accountName}: ${summary.balance} ${summary.currency} → ${amountInDefaultCurrency.toFixed(2)} ${jwtPayload.currency} (환율: ${crossRate.toFixed(6)})`,
-      )
 
       const existingCash = cash.find((s) => s.accountId === summary.accountId)
       if (existingCash) {
@@ -328,10 +307,6 @@ export class DashboardService {
       const crossRate = defaultCurrencyRate / transactionCurrencyRate
       const amountInDefaultCurrency =
         (Number(transaction.currentPrice) || Number(transaction.purchasePrice)) * crossRate
-
-      console.log(
-        `💳 ETC ${accountName}: ${transaction.currentPrice || transaction.purchasePrice} ${transaction.currency} → ${amountInDefaultCurrency.toFixed(2)} ${jwtPayload.currency} (환율: ${crossRate.toFixed(6)})`,
-      )
 
       const existingSummary = assets.find((s) => s.accountId === transaction.accountId)
       if (existingSummary) {
@@ -368,10 +343,6 @@ export class DashboardService {
       const crossRate = defaultCurrencyRate / transactionCurrencyRate
       const amountInDefaultCurrency = (Number(transaction.remainingAmount) || Number(transaction.amount)) * crossRate
 
-      console.log(
-        `💳 Liabilities ${accountName}: ${transaction.remainingAmount || transaction.amount} ${transaction.currency} → ${amountInDefaultCurrency.toFixed(2)} ${jwtPayload.currency} (환율: ${crossRate.toFixed(6)})`,
-      )
-
       const existingSummary = liabilities.find((s) => s.accountId === transaction.accountId)
       if (existingSummary) {
         existingSummary.amount = addAmount(existingSummary.amount, amountInDefaultCurrency)
@@ -407,8 +378,6 @@ export class DashboardService {
       cashTotalAmount: cashTotalAmount,
       details: details,
     }
-
-    console.log("Dashboard Summary:", JSON.stringify(temp, null, 2))
 
     return {
       asset: assets,

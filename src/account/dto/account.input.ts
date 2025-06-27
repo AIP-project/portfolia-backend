@@ -1,6 +1,6 @@
 import { Field, InputType } from "@nestjs/graphql"
 import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from "class-validator"
-import { AccountType, CurrencyType } from "@prisma/client"
+import { AccountType } from "@prisma/client"
 
 @InputType({ description: "계좌 입력 타입" })
 export class AccountInput {

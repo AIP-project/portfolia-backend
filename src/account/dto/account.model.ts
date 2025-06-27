@@ -1,5 +1,5 @@
 import { Field, ObjectType } from "@nestjs/graphql"
-import { AccountType, CurrencyType } from "@prisma/client"
+import { AccountType } from "@prisma/client"
 
 @ObjectType({ description: "계좌 기본 정보" })
 export class Account {
