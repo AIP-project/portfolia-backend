@@ -25,7 +25,7 @@ export class DashboardDetailItem {
   unrealizedPnL!: number
 
   @Field(() => Float, { description: "기본통화로 변환된 미실현 손익" })
-  unrealizedPnLInDefaultCurrency: number
+  unrealizedPnLInDefaultCurrency!: number
 
   @Field(() => Float, { description: "미실현 손익률 (%)" })
   unrealizedPnLPercentage!: number
