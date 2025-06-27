@@ -97,6 +97,10 @@ export class DashboardService {
 
       if (summary.type === SummaryType.CASH) {
         const summaryCurrencyRate = summary.currency ? exchangeRate[summary.currency] : 1
+        if (!summaryCurrencyRate) {
+          console.warn(`⚠️ ${summary.currency}의 환율을 찾을 수 없습니다.`)
+          continue
+        }
         const crossRate = defaultCurrencyRate / summaryCurrencyRate
         amountInDefaultCurrency = Number(summary.amount) * crossRate
 
@@ -199,6 +203,11 @@ export class DashboardService {
 
       if (summary.type === SummaryType.CASH) {
         const summaryCurrencyRate = summary.currency ? exchangeRate[summary.currency] : 1
+        if (!summaryCurrencyRate) {
+          console.warn(`⚠️ ${summary.currency}의 환율을 찾을 수 없습니다.`)
+          continue
+        }
+
         const crossRate = defaultCurrencyRate / summaryCurrencyRate
         amountInDefaultCurrency = Number(summary.amount) * crossRate
 
@@ -273,8 +282,13 @@ export class DashboardService {
 
     for (const summary of bankSummary) {
       const accountName = summary.account.nickName
-      const accountCurrencyRate = summary.currency ? exchangeRate[summary.currency] : 1
-      const crossRate = defaultCurrencyRate / accountCurrencyRate
+      const summaryCurrencyRate = summary.currency ? exchangeRate[summary.currency] : 1
+      if (!summaryCurrencyRate) {
+        console.warn(`⚠️ ${summary.currency}의 환율을 찾을 수 없습니다.`)
+        continue
+      }
+
+      const crossRate = defaultCurrencyRate / summaryCurrencyRate
       const amountInDefaultCurrency = Number(summary.balance) * crossRate
 
       const existingCash = cash.find((s) => s.accountId === summary.accountId)
@@ -306,6 +320,10 @@ export class DashboardService {
     for (const transaction of etcTransactions) {
       const accountName = transaction.account.nickName
       const transactionCurrencyRate = transaction.currency ? exchangeRate[transaction.currency] : 1
+      if (!transactionCurrencyRate) {
+        console.warn(`⚠️ ${transaction.currency}의 환율을 찾을 수 없습니다.`)
+        continue
+      }
       const crossRate = defaultCurrencyRate / transactionCurrencyRate
       const amountInDefaultCurrency =
         (Number(transaction.currentPrice) || Number(transaction.purchasePrice)) * crossRate
@@ -342,6 +360,10 @@ export class DashboardService {
     for (const transaction of liabilitiesTransactions) {
       const accountName = transaction.account.nickName
       const transactionCurrencyRate = transaction.currency ? exchangeRate[transaction.currency] : 1
+      if (!transactionCurrencyRate) {
+        console.warn(`⚠️ ${transaction.currency}의 환율을 찾을 수 없습니다.`)
+        continue
+      }
       const crossRate = defaultCurrencyRate / transactionCurrencyRate
       const amountInDefaultCurrency = (Number(transaction.remainingAmount) || Number(transaction.amount)) * crossRate
 
@@ -369,16 +391,6 @@ export class DashboardService {
         unrealizedPnLInDefaultCurrency: 0,
         unrealizedPnLPercentage: 0,
       })
-    }
-
-    const temp = {
-      asset: assets,
-      liabilities: liabilities,
-      cash: cash,
-      assetTotalAmount: assetTotalAmount,
-      liabilitiesTotalAmount: liabilitiesTotalAmount,
-      cashTotalAmount: cashTotalAmount,
-      details: details,
     }
 
     return {

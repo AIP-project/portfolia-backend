@@ -12,10 +12,6 @@ export class CreateAccountInput extends OmitType(AccountInput, ["id"]) {
   @IsEnum(AccountType)
   type!: AccountType
 
-  @Field(() => CurrencyType, { nullable: false, description: "계좌 통화" })
-  @IsEnum(CurrencyType)
-  currency!: CurrencyType
-
   @Field({ nullable: true })
   @IsOptional()
   @ValidateNested()
