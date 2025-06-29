@@ -1,27 +1,15 @@
 import { Injectable, Logger } from "@nestjs/common"
-import {
-  ErrorMessage,
-  ExternalServiceException,
-  ForbiddenException,
-  InterfaceConfig,
-  JwtPayload,
-  parseISOString,
-  ValidationException,
-} from "../common"
+import { ErrorMessage, ForbiddenException, JwtPayload, parseISOString, ValidationException } from "../common"
 import {
   CreateStockTransactionInput,
   StockTransactionInput,
   StockTransactionsArgs,
   UpdateStockTransactionInput,
 } from "./dto"
-import { HttpService } from "@nestjs/axios"
-import { firstValueFrom } from "rxjs"
-import { AxiosError } from "axios"
-import { catchError, map } from "rxjs/operators"
-import { ConfigService } from "@nestjs/config"
 import { PrismaService } from "../common/prisma"
 import { Decimal } from "@prisma/client/runtime/library"
-import { AccountType, Prisma, SummaryType, TransactionType, UserRole } from "@prisma/client"
+import { AccountType, CurrencyType, Prisma, SummaryType, TransactionType, UserRole } from "@prisma/client"
+import { StockPriceHistoryService } from "../stock-price-history/stock-price-history.service"
 
 @Injectable()
 export class StockTransactionService {
@@ -29,8 +17,7 @@ export class StockTransactionService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly httpService: HttpService,
-    private readonly configService: ConfigService,
+    private readonly stockPriceHistoryService: StockPriceHistoryService,
   ) {}
 
   private async commonCheckStockTransaction(jwtPayload: JwtPayload, stockTransactionInput: StockTransactionInput) {
@@ -87,9 +74,12 @@ export class StockTransactionService {
     const cleanInput = await this.cleanCreateStockTransaction(jwtPayload, createStockTransactionInput)
     const { isUpdate, ...rest } = cleanInput
     const result = await this.txCreateStockTransaction(rest)
+
+    // 비동기로 주식 정보 업데이트 처리
     this.postCreateStockTransaction(result, cleanInput.isUpdate).then((value) =>
       this.logger.debug(`Post create stock transaction: ${value}`),
     )
+
     return result
   }
 
@@ -115,7 +105,7 @@ export class StockTransactionService {
         type: SummaryType.SUMMARY,
         symbol: restCleanInput.symbol,
         name: restCleanInput.name,
-        currency: restCleanInput.currency || cashSummary.currency, // currency 추가
+        currency: restCleanInput.currency || cashSummary.currency,
         quantity: new Decimal(sign * Number(restCleanInput.quantity)),
         amount: new Decimal(sign * Number(restCleanInput.amount)),
       },
@@ -184,92 +174,55 @@ export class StockTransactionService {
     })
   }
 
-  private async postCreateStockTransaction(result: any, isUpdate: boolean) {
+  // 🔄 완전히 리팩토링된 postCreateStockTransaction 메서드
+  private async postCreateStockTransaction(result: any, isUpdate: boolean): Promise<string> {
     const { symbol } = result
+
     if (!isUpdate) {
-      const interfaceConfig = this.configService.get<InterfaceConfig>("interface")!
-      const payload = {
-        query: symbol,
-        sections: [
-          {
-            type: "PRODUCT",
-          },
-        ],
-      }
       try {
-        const response = await firstValueFrom(
-          this.httpService
-            .post(interfaceConfig.stockSearchApiUrl, payload, {
-              headers: {
-                "Content-Type": "application/json",
-              },
-            })
-            .pipe(
-              map((res) => res.data),
-              catchError((error: AxiosError) => {
-                this.logger.error(`Error searching for stock "${symbol}": ${error.message}`)
-                throw new ExternalServiceException(`Failed to search stock: ${error.message}`)
-              }),
-            ),
-        )
+        // StockPriceHistoryService를 통해 주식 정보 조회
+        const stockInfoResponse = await this.stockPriceHistoryService.getStockInfoBySymbol(symbol)
 
-        for (const section of response.result) {
-          if (section.type === "PRODUCT" && section.data) {
-            for (const data of section.data.items) {
-              if (data.symbol === symbol) {
-                this.logger.log(`Found stock: ${data.keyword} ${data.productCode} (${data.symbol})`)
-                const stockInfos = await firstValueFrom(
-                  this.httpService.get(`${interfaceConfig.stockInfoApiUrl}${data.productCode}`).pipe(
-                    map((res) => res.data),
-                    catchError((error: AxiosError) => {
-                      this.logger.error(`Error searching for stock "${symbol}": ${error.message}`)
-                      throw new ExternalServiceException(`Failed to search stock: ${error.message}`)
-                    }),
-                  ),
-                )
-                const stockInfo = stockInfos.result[0]
-                this.prisma.stockSummary
-                  .updateMany({
-                    where: {
-                      symbol: symbol,
-                      isDelete: false,
-                    },
-                    data: {
-                      stockCompanyCode: stockInfo.code,
-                      currency: stockInfo.currency,
-                      market: stockInfo.market.code,
-                      logoImageUrl: stockInfo.logoImageUrl,
-                    },
-                  })
-                  .then((value) => {
-                    this.logger.debug(`Updated stock summary: ${value.count}`)
-                  })
-                this.prisma.stockTransaction
-                  .update({
-                    where: {
-                      id: result.id,
-                    },
-                    data: {
-                      currency: stockInfo.currency,
-                    },
-                  })
-                  .then((value) => {
-                    this.logger.debug(`Updated stock transaction: 1`)
-                  })
-                return "success"
-              }
-            }
-          }
+        if (stockInfoResponse.success && stockInfoResponse.stockInfo) {
+          const updateData = this.stockPriceHistoryService.getUpdateDataFromStockInfo(stockInfoResponse.stockInfo)
+
+          // StockSummary 업데이트
+          const summaryUpdateResult = await this.prisma.stockSummary.updateMany({
+            where: {
+              symbol: symbol,
+              isDelete: false,
+            },
+            data: updateData,
+          })
+
+          // StockTransaction 업데이트
+          await this.prisma.stockTransaction.update({
+            where: {
+              id: result.id,
+            },
+            data: {
+              currency: stockInfoResponse.stockInfo.currency as CurrencyType,
+            },
+          })
+
+          this.logger.log(
+            `Successfully updated stock info for symbol "${symbol}". Updated ${summaryUpdateResult.count} stock summaries.`,
+          )
+          return "success"
+        } else {
+          this.logger.warn(`Failed to get stock info for symbol "${symbol}": ${stockInfoResponse.error}`)
+          return "fail"
         }
-
-        return "fail"
       } catch (error) {
-        this.logger.error(`Exception caught: ${error.message}`)
+        this.logger.error(`Exception caught while updating stock info for symbol "${symbol}": ${error.message}`)
+        return "error"
       }
     }
+
     return "No need to search"
   }
 
+  // 나머지 메서드들은 기존과 동일
   async stockTransactions(jwtPayload: JwtPayload, stockTransactionsArgs: StockTransactionsArgs) {
     const {
       page = 1,
@@ -312,13 +265,12 @@ export class StockTransactionService {
       whereConditions.transactionDate = { lte: new Date(toTransactionDate) }
     }
 
-    // Order by 설정
     const orderBy =
       sortBy.length > 0
         ? sortBy.map(({ field, direction }) => ({
             [field]: direction ? "asc" : "desc",
           }))
-        : [{ createdAt: "asc" }] // 기본 정렬
+        : [{ createdAt: "asc" }]
 
     const [stockTransactions, total] = await Promise.all([
       this.prisma.stockTransaction.findMany({

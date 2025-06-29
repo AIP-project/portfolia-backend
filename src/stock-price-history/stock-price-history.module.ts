@@ -9,6 +9,6 @@ import { StockPriceDataLoader } from "./stock-price.dataloader"
 @Module({
   imports: [HttpModule, DistributeLockModule],
   providers: [StockPriceHistoryResolver, StockPriceHistoryService, StockPriceHistoryTask, StockPriceDataLoader],
-  exports: [StockPriceDataLoader],
+  exports: [StockPriceDataLoader, StockPriceHistoryService],
 })
 export class StockPriceHistoryModule {}
