@@ -350,7 +350,7 @@ export class DashboardService {
         },
       },
       update: {
-        ...createRebalancingGoalInput,
+        targetRatio: createRebalancingGoalInput.targetRatio,
       },
       create: {
         ...createRebalancingGoalInput,
