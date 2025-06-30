@@ -106,6 +106,10 @@ export class DashboardService {
       } else {
         const coinValueInUSD = Number(summary.quantity) * Number(currentPrice.price)
         const coinPriceCurrencyRate = currentPrice.currency ? exchangeRate[currentPrice.currency] : 1
+        if (!coinPriceCurrencyRate) {
+          this.logger.warn(`⚠️ ${currentPrice.currency}의 환율을 찾을 수 없습니다.`)
+          continue
+        }
         const crossRate = defaultCurrencyRate / coinPriceCurrencyRate
         amountInDefaultCurrency = coinValueInUSD * crossRate
 
@@ -192,6 +196,10 @@ export class DashboardService {
       } else {
         const stockValue = Number(summary.quantity) * Number(currentPrice.base)
         const currentPriceCurrencyRate = currentPrice.currency ? exchangeRate[currentPrice.currency] : 1
+        if (!currentPriceCurrencyRate) {
+          this.logger.warn(`⚠️ ${currentPrice.currency}의 환율을 찾을 수 없습니다.`)
+          continue
+        }
         const crossRate = defaultCurrencyRate / currentPriceCurrencyRate
         amountInDefaultCurrency = stockValue * crossRate
 
