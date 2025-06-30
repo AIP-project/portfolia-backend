@@ -26,7 +26,8 @@ model User {
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
-  accounts Account[]
+  accounts         Account[]
+  rebalancingGoals RebalancingGoal[]
 
   @@map("user")
 }
@@ -311,6 +312,21 @@ model ExchangeRate {
   updatedAt     DateTime @updatedAt
 
   @@map("exchange_rate")
+}
+
+model RebalancingGoal {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  goalType    String
+  referenceId String
+  targetRatio Decimal  @default(0) @db.Decimal(5, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, goalType, referenceId], name: "userId_goalType_referenceId")
+  @@map("rebalancing_goal")
 }
 
 enum UserRole {

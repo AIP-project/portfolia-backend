@@ -4,7 +4,7 @@ import { IsEnum, IsOptional, ValidateNested } from "class-validator"
 import { CreateBankSummaryInput } from "../../bank-summary/dto"
 import { CreateStockSummaryInput } from "../../stock-summary/dto"
 import { CreateCoinSummaryInput } from "../../coin-summary/dto"
-import { AccountType, CurrencyType } from "@prisma/client"
+import { AccountType } from "@prisma/client"
 
 @InputType()
 export class CreateAccountInput extends OmitType(AccountInput, ["id"]) {
