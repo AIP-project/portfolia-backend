@@ -4,6 +4,7 @@ import { JwtPayload, UserDecoded } from "../common"
 import { BankSummary, UpdateBankSummaryInput } from "./dto"
 import { ExchangeDataLoader } from "../exchange/exchange.dataloader"
 import { CurrencyType } from "@prisma/client"
+import { CurrencyUtils } from "../common/utility"
 
 @Resolver(() => BankSummary)
 export class BankSummaryResolver {
@@ -30,20 +31,12 @@ export class BankSummaryResolver {
     description: "계정 기본 통화로 환산한 잔액",
   })
   async resolveBalanceInDefaultCurrency(@UserDecoded() jwtPayload: JwtPayload, @Parent() bankSummary: BankSummary) {
-    if (!bankSummary.currency) return 0
-
-    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(bankSummary.currency)
-
-    if (!exchangeRate) return 0
-
-    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
-    const summaryCurrencyRate = exchangeRate.exchangeRates[bankSummary.currency]
-
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
-
-    const crossRate = defaultCurrencyRate / summaryCurrencyRate
-
-    return bankSummary.balance * crossRate
+    return await CurrencyUtils.convertCurrency(
+      this.exchangeDataLoader,
+      jwtPayload.currency,
+      bankSummary.currency,
+      bankSummary.balance
+    )
   }
 
   @ResolveField("totalDepositAmountInDefaultCurrency", () => Float, {
@@ -54,20 +47,12 @@ export class BankSummaryResolver {
     @UserDecoded() jwtPayload: JwtPayload,
     @Parent() bankSummary: BankSummary,
   ) {
-    if (!bankSummary.currency) return 0
-
-    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(bankSummary.currency)
-
-    if (!exchangeRate) return 0
-
-    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
-    const summaryCurrencyRate = exchangeRate.exchangeRates[bankSummary.currency]
-
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
-
-    const crossRate = defaultCurrencyRate / summaryCurrencyRate
-
-    return bankSummary.totalDepositAmount * crossRate
+    return await CurrencyUtils.convertCurrency(
+      this.exchangeDataLoader,
+      jwtPayload.currency,
+      bankSummary.currency,
+      bankSummary.totalDepositAmount
+    )
   }
 
   @ResolveField("totalWithdrawalAmountInDefaultCurrency", () => Float, {
@@ -78,19 +63,11 @@ export class BankSummaryResolver {
     @UserDecoded() jwtPayload: JwtPayload,
     @Parent() bankSummary: BankSummary,
   ) {
-    if (!bankSummary.currency) return 0
-
-    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(bankSummary.currency)
-
-    if (!exchangeRate) return 0
-
-    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
-    const summaryCurrencyRate = exchangeRate.exchangeRates[bankSummary.currency]
-
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
-
-    const crossRate = defaultCurrencyRate / summaryCurrencyRate
-
-    return bankSummary.totalWithdrawalAmount * crossRate
+    return await CurrencyUtils.convertCurrency(
+      this.exchangeDataLoader,
+      jwtPayload.currency,
+      bankSummary.currency,
+      bankSummary.totalWithdrawalAmount
+    )
   }
 }
