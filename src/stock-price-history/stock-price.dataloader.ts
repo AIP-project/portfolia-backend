@@ -18,4 +18,3 @@ export class StockPriceDataLoader {
     return symbols.map((symbol) => symbolToHistory.get(symbol) || null)
   })
 }
-

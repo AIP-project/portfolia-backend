@@ -41,14 +41,19 @@ export class ExchangeService {
       distinct: ["currency"],
     })
 
-    const etcCurrencies = await this.prisma.etcSummary.findMany({
+    const etcCurrencies = await this.prisma.etcTransaction.findMany({
       where: { isDelete: false },
       select: { currency: true },
       distinct: ["currency"],
     })
 
-    const liabilitiesCurrencies = await this.prisma.liabilitiesSummary.findMany({
+    const liabilitiesCurrencies = await this.prisma.liabilitiesTransaction.findMany({
       where: { isDelete: false },
+      select: { currency: true },
+      distinct: ["currency"],
+    })
+
+    const stockPriceCurrencies = await this.prisma.stockPriceHistory.findMany({
       select: { currency: true },
       distinct: ["currency"],
     })
@@ -61,6 +66,7 @@ export class ExchangeService {
           ...coinCurrencies.map((item) => item.currency),
           ...etcCurrencies.map((item) => item.currency),
           ...liabilitiesCurrencies.map((item) => item.currency),
+          ...stockPriceCurrencies.map((item) => item.currency),
         ].filter((currency) => currency != null),
       ), // null과 undefined 모두 제거
     )

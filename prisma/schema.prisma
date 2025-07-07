@@ -26,20 +26,20 @@ model User {
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
-  accounts Account[]
+  accounts         Account[]
+  rebalancingGoals RebalancingGoal[]
 
   @@map("user")
 }
 
 model Account {
-  id        Int          @id @default(autoincrement())
+  id        Int         @id @default(autoincrement())
   nickName  String
-  type      AccountType  @default(ETC)
-  currency  CurrencyType @default(KRW)
+  type      AccountType @default(ETC)
   note      String?
-  isDelete  Boolean      @default(false)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  isDelete  Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
   userId    Int
 
   user                    User                     @relation(fields: [userId], references: [id])
@@ -77,17 +77,17 @@ model BankTransaction {
 }
 
 model BankSummary {
-  id                    Int           @id @default(autoincrement())
+  id                    Int          @id @default(autoincrement())
   name                  String?
   accountNumber         String
-  totalDepositAmount    Decimal       @default(0) @db.Decimal(20, 10)
-  totalWithdrawalAmount Decimal       @default(0) @db.Decimal(20, 10)
-  balance               Decimal       @default(0) @db.Decimal(20, 10)
-  currency              CurrencyType?
-  isDelete              Boolean       @default(false)
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-  accountId             Int           @unique
+  totalDepositAmount    Decimal      @default(0) @db.Decimal(20, 10)
+  totalWithdrawalAmount Decimal      @default(0) @db.Decimal(20, 10)
+  balance               Decimal      @default(0) @db.Decimal(20, 10)
+  currency              CurrencyType
+  isDelete              Boolean      @default(false)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  accountId             Int          @unique
 
   account Account @relation(fields: [accountId], references: [id])
 
@@ -119,18 +119,18 @@ model CoinTransaction {
 }
 
 model CoinSummary {
-  id            Int           @id @default(autoincrement())
+  id            Int          @id @default(autoincrement())
   name          String?
   accountNumber String?
   symbol        String?
   slug          String?
-  quantity      Decimal       @default(0) @db.Decimal(25, 12)
-  amount        Decimal       @default(0) @db.Decimal(25, 12)
-  currency      CurrencyType?
-  type          SummaryType   @default(CASH)
-  isDelete      Boolean       @default(false)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  quantity      Decimal      @default(0) @db.Decimal(25, 12)
+  amount        Decimal      @default(0) @db.Decimal(25, 12)
+  currency      CurrencyType
+  type          SummaryType  @default(CASH)
+  isDelete      Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   accountId     Int
 
   account Account @relation(fields: [accountId], references: [id])
@@ -164,21 +164,21 @@ model StockTransaction {
 }
 
 model StockSummary {
-  id                Int           @id @default(autoincrement())
-  name              String?
-  accountNumber     String?
-  symbol            String?
-  stockCompanyCode  String?
-  quantity          Decimal       @default(0) @db.Decimal(20, 10)
-  amount            Decimal       @default(0) @db.Decimal(20, 10)
-  currency          CurrencyType?
-  market            String?
-  logoImageUrl      String?
-  type              SummaryType   @default(CASH)
-  isDelete          Boolean       @default(false)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  accountId         Int
+  id               Int          @id @default(autoincrement())
+  name             String?
+  accountNumber    String?
+  symbol           String?
+  stockCompanyCode String?
+  quantity         Decimal      @default(0) @db.Decimal(20, 10)
+  amount           Decimal      @default(0) @db.Decimal(20, 10)
+  currency         CurrencyType
+  market           String?
+  logoImageUrl     String?
+  type             SummaryType  @default(CASH)
+  isDelete         Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  accountId        Int
 
   account Account @relation(fields: [accountId], references: [id])
 
@@ -188,18 +188,18 @@ model StockSummary {
 }
 
 model EtcTransaction {
-  id              Int             @id @default(autoincrement())
+  id              Int           @id @default(autoincrement())
   transactionDate DateTime
   name            String
-  purchasePrice   Decimal         @db.Decimal(15, 5)
-  currentPrice    Decimal?        @db.Decimal(15, 5)
+  purchasePrice   Decimal       @db.Decimal(15, 5)
+  currentPrice    Decimal?      @db.Decimal(15, 5)
   operation       String?
   currency        CurrencyType?
   note            String?
-  isComplete      Boolean         @default(false)
-  isDelete        Boolean         @default(false)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  isComplete      Boolean       @default(false)
+  isDelete        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
   accountId       Int
 
   account Account @relation(fields: [accountId], references: [id])
@@ -208,20 +208,19 @@ model EtcTransaction {
 }
 
 model EtcSummary {
-  id                    Int           @id @default(autoincrement())
+  id                    Int      @id @default(autoincrement())
   name                  String?
   accountNumber         String?
-  totalDepositAmount    Decimal       @default(0) @db.Decimal(20, 10)
-  totalWithdrawalAmount Decimal       @default(0) @db.Decimal(20, 10)
-  balance               Decimal       @default(0) @db.Decimal(20, 10)
-  purchasePrice         Decimal       @default(0) @db.Decimal(15, 5)
-  currentPrice          Decimal?      @db.Decimal(15, 5)
-  count                 Int           @default(0)
-  currency              CurrencyType?
-  isDelete              Boolean       @default(false)
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-  accountId             Int           @unique
+  totalDepositAmount    Decimal  @default(0) @db.Decimal(20, 10)
+  totalWithdrawalAmount Decimal  @default(0) @db.Decimal(20, 10)
+  balance               Decimal  @default(0) @db.Decimal(20, 10)
+  purchasePrice         Decimal  @default(0) @db.Decimal(15, 5)
+  currentPrice          Decimal? @db.Decimal(15, 5)
+  count                 Int      @default(0)
+  isDelete              Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  accountId             Int      @unique
 
   account Account @relation(fields: [accountId], references: [id])
 
@@ -229,21 +228,21 @@ model EtcSummary {
 }
 
 model LiabilitiesTransaction {
-  id              Int             @id @default(autoincrement())
+  id              Int           @id @default(autoincrement())
   transactionDate DateTime
   name            String
-  amount          Decimal         @default(0) @db.Decimal(15, 5)
-  remainingAmount Decimal?        @db.Decimal(15, 5)
-  rate            Decimal         @default(0) @db.Decimal(15, 5)
-  isYearly        Boolean         @default(true)
+  amount          Decimal       @default(0) @db.Decimal(15, 5)
+  remainingAmount Decimal?      @db.Decimal(15, 5)
+  rate            Decimal       @default(0) @db.Decimal(15, 5)
+  isYearly        Boolean       @default(true)
   operation       String?
   currency        CurrencyType?
   note            String?
   repaymentDate   DateTime?
-  isComplete      Boolean         @default(false)
-  isDelete        Boolean         @default(false)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  isComplete      Boolean       @default(false)
+  isDelete        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
   accountId       Int
 
   account Account @relation(fields: [accountId], references: [id])
@@ -252,20 +251,19 @@ model LiabilitiesTransaction {
 }
 
 model LiabilitiesSummary {
-  id                    Int           @id @default(autoincrement())
+  id                    Int      @id @default(autoincrement())
   name                  String?
   accountNumber         String?
-  totalDepositAmount    Decimal       @default(0) @db.Decimal(20, 10)
-  totalWithdrawalAmount Decimal       @default(0) @db.Decimal(20, 10)
-  balance               Decimal       @default(0) @db.Decimal(20, 10)
-  amount                Decimal       @default(0) @db.Decimal(15, 5)
-  remainingAmount       Decimal?      @db.Decimal(15, 5)
-  count                 Int           @default(0)
-  currency              CurrencyType?
-  isDelete              Boolean       @default(false)
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-  accountId             Int           @unique
+  totalDepositAmount    Decimal  @default(0) @db.Decimal(20, 10)
+  totalWithdrawalAmount Decimal  @default(0) @db.Decimal(20, 10)
+  balance               Decimal  @default(0) @db.Decimal(20, 10)
+  amount                Decimal  @default(0) @db.Decimal(15, 5)
+  remainingAmount       Decimal? @db.Decimal(15, 5)
+  count                 Int      @default(0)
+  isDelete              Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  accountId             Int      @unique
 
   account Account @relation(fields: [accountId], references: [id])
 
@@ -275,7 +273,7 @@ model LiabilitiesSummary {
 model StockPriceHistory {
   id         Int      @id @default(autoincrement())
   symbol     String
-  currency   String?
+  currency   String
   base       Decimal  @default(0) @db.Decimal(20, 10)
   close      Decimal  @default(0) @db.Decimal(20, 10)
   volume     Decimal  @default(0) @db.Decimal(20, 0)
@@ -285,20 +283,21 @@ model StockPriceHistory {
 
   @@index([symbol, id])
   @@index([symbol])
+  @@index([currency])
   @@map("stock_price_history")
 }
 
 model CoinPriceHistory {
-  id               Int       @id @default(autoincrement())
-  symbol           String
-  slug             String?
-  currency         String?
-  price            Decimal   @default(0) @db.Decimal(25, 12)
-  marketCap        Decimal?  @db.Decimal(25, 12)
-  volumeChange24h  Decimal?  @db.Decimal(25, 12)
-  lastUpdated      DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id              Int       @id @default(autoincrement())
+  symbol          String
+  slug            String?
+  currency        String?
+  price           Decimal   @default(0) @db.Decimal(25, 12)
+  marketCap       Decimal?  @db.Decimal(25, 12)
+  volumeChange24h Decimal?  @db.Decimal(25, 12)
+  lastUpdated     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([symbol, id])
   @@index([symbol])
@@ -313,6 +312,21 @@ model ExchangeRate {
   updatedAt     DateTime @updatedAt
 
   @@map("exchange_rate")
+}
+
+model RebalancingGoal {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  goalType    String
+  referenceId String
+  targetRatio Decimal  @default(0) @db.Decimal(5, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, goalType, referenceId], name: "userId_goalType_referenceId")
+  @@map("rebalancing_goal")
 }
 
 enum UserRole {

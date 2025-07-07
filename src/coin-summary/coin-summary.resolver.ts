@@ -6,6 +6,7 @@ import { CoinPriceDataLoader } from "../coin-price-history/coin-price.dataloader
 import { ExchangeDataLoader } from "../exchange/exchange.dataloader"
 import { CurrencyType, SummaryType } from "@prisma/client"
 import { CoinSummaryDataLoader } from "./coin-summary.dataloader"
+import { CurrencyUtils } from "../common/utility"
 
 @Resolver(() => CoinSummary)
 export class CoinSummaryResolver {
@@ -39,20 +40,12 @@ export class CoinSummaryResolver {
     description: "계정 기본 통화로 환산한 총 금액",
   })
   async resolveAmountInDefaultCurrency(@UserDecoded() jwtPayload: JwtPayload, @Parent() coinSummary: CoinSummary) {
-    if (!coinSummary.currency) return 0
-
-    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
-
-    if (!exchangeRate) return 0
-
-    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
-    const summaryCurrencyRate = exchangeRate.exchangeRates[coinSummary.currency]
-
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
-
-    const crossRate = defaultCurrencyRate / summaryCurrencyRate
-
-    return coinSummary.amount * crossRate
+    return await CurrencyUtils.convertCurrency(
+      this.exchangeDataLoader,
+      jwtPayload.currency,
+      coinSummary.currency,
+      coinSummary.amount
+    )
   }
 
   @ResolveField("pricePerShare", () => Float, { nullable: true, description: "구매한 개당 가격" })
@@ -88,28 +81,15 @@ export class CoinSummaryResolver {
     @UserDecoded() jwtPayload: JwtPayload,
     @Parent() coinSummary: CoinSummary,
   ) {
-    if (!coinSummary.currency || !coinSummary.symbol) return 0
+    const currentAmount = await this.resolveCurrentAmount(coinSummary)
+    if (!currentAmount) return 0
 
-    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
-
-    if (!exchangeRate) return 0
-
-    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
-    const summaryCurrencyRate = exchangeRate.exchangeRates[coinSummary.currency]
-
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
-
-    const crossRate = defaultCurrencyRate / summaryCurrencyRate
-
-    const coinPriceHistory = await this.coinPriceDataLoader.coinPriceBySymbols.load(coinSummary.symbol)
-
-    if (!coinPriceHistory) return 0
-
-    const historyCurrencyRate = exchangeRate.exchangeRates[coinPriceHistory.currency]
-
-    if (!historyCurrencyRate) return 0
-
-    return ((coinSummary.quantity * coinPriceHistory.price * historyCurrencyRate) / summaryCurrencyRate) * crossRate
+    return await CurrencyUtils.convertCurrency(
+      this.exchangeDataLoader,
+      jwtPayload.currency,
+      coinSummary.currency,
+      currentAmount
+    )
   }
 
   @ResolveField("pricePerShareInDefaultCurrency", () => Float, {
@@ -120,28 +100,18 @@ export class CoinSummaryResolver {
     @UserDecoded() jwtPayload: JwtPayload,
     @Parent() coinSummary: CoinSummary,
   ) {
-    if (!coinSummary.currency || !coinSummary.symbol) return 0
-
-    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
-
-    if (!exchangeRate) return 0
-
-    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
-    const summaryCurrencyRate = exchangeRate.exchangeRates[coinSummary.currency]
-
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
-
-    const crossRate = defaultCurrencyRate / summaryCurrencyRate
+    if (!coinSummary.currency || !coinSummary.symbol || !coinSummary.quantity) return 0
 
     const coinPriceHistory = await this.coinPriceDataLoader.coinPriceBySymbols.load(coinSummary.symbol)
-
     if (!coinPriceHistory) return 0
 
-    const historyCurrencyRate = exchangeRate.exchangeRates[coinPriceHistory.currency]
-
-    if (!historyCurrencyRate) return 0
-
-    return ((coinPriceHistory.price * historyCurrencyRate) / summaryCurrencyRate) * crossRate
+    // 코인 가격을 직접 사용자 기본 통화로 변환
+    return await CurrencyUtils.convertCurrency(
+      this.exchangeDataLoader,
+      jwtPayload.currency,
+      coinPriceHistory.currency as CurrencyType,
+      coinPriceHistory.price
+    )
   }
 
   @ResolveField("differenceRate", () => Float, { nullable: true, description: "차액률" })
@@ -192,15 +162,13 @@ export class CoinSummaryResolver {
   ) {
     if (coinSummary.type !== SummaryType.CASH) return 0
     const totalCoinValue = await this.resolveTotalCoinValue(coinSummary)
+    const totalAccountValue = coinSummary.amount + (totalCoinValue || 0)
 
-    const exchangeRate = await this.exchangeDataLoader.batchLoadExchange.load(coinSummary.currency)
-    const defaultCurrencyRate = exchangeRate.exchangeRates[jwtPayload.currency]
-    const summaryCurrencyRate = exchangeRate.exchangeRates[coinSummary.currency]
-
-    if (!defaultCurrencyRate || !summaryCurrencyRate) return 0
-
-    const crossRate = defaultCurrencyRate / summaryCurrencyRate
-
-    return (coinSummary.amount + (totalCoinValue || 0)) * crossRate
+    return await CurrencyUtils.convertCurrency(
+      this.exchangeDataLoader,
+      jwtPayload.currency,
+      coinSummary.currency,
+      totalAccountValue
+    )
   }
 }

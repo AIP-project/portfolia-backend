@@ -1,6 +1,6 @@
 import { Field, Float, InputType } from "@nestjs/graphql"
 import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from "class-validator"
-import { SummaryType } from "@prisma/client"
+import { CurrencyType, SummaryType } from "@prisma/client"
 
 @InputType()
 export class CoinSummaryInput {
@@ -13,6 +13,10 @@ export class CoinSummaryInput {
   @IsOptional()
   @IsString()
   name?: string
+
+  @Field(() => CurrencyType, { nullable: true, description: "통화 타입" })
+  @IsOptional()
+  currency?: CurrencyType
 
   @Field({ nullable: true, description: "코인 심볼" })
   @IsOptional()

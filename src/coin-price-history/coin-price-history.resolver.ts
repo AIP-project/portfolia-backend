@@ -1,5 +1,5 @@
 import { Query, Resolver } from "@nestjs/graphql"
-import { CoinPriceHistory } from "./dto/coin-price-history.model"
+import { CoinPriceHistory } from "./dto"
 import { CoinPriceHistoryService } from "./coin-price-history.service"
 import { Public } from "../common"
 

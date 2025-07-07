@@ -1,4 +1,3 @@
-// src/common/middleware/graphql-logging.middleware.ts
 import { IMiddlewareFunction } from "graphql-middleware"
 import { Logger } from "@nestjs/common"
 import { GraphQLResolveInfo } from "graphql"

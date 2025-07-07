@@ -85,6 +85,7 @@ export class CoinSummaryService {
         name: updateCoinSummaryInput.name,
         amount: updateCoinSummaryInput.amount,
         accountNumber: updateCoinSummaryInput.accountNumber,
+        currency: updateCoinSummaryInput.currency,
       }
     } else {
       cleanInput = {

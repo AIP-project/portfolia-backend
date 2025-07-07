@@ -4,6 +4,7 @@
 # GCP Cloud SQL to Local MySQL 데이터베이스 복제 스크립트
 # macOS 호환성 개선 버전 (bash 3.x 지원)
 # 중복 함수 제거, 복원 확인 프롬프트 제거, 자동 백업 파일 정리 추가 버전
+# SSL 설정 수정: GCP Cloud SQL은 SSL 연결 필수
 # =============================================================================
 
 set -e  # 에러 발생시 스크립트 중단
@@ -39,14 +40,10 @@ log_error() {
 # 환경 변수 (staging 또는 prod)
 ENVIRONMENT=""
 
-# Staging 환경 설정
-STAGING_REMOTE_HOST="34.22.105.118"
-STAGING_REMOTE_PORT="53306"
+# Staging 환경 설정 (QA 환경으로 변경)
+STAGING_REMOTE_HOST="34.64.164.212"
+STAGING_REMOTE_PORT="3306"
 STAGING_REMOTE_USER="root"
-STAGING_SSH_USER="greatbooms"
-STAGING_SSH_HOST="34.22.105.118"
-STAGING_SSH_PORT="22"
-STAGING_LOCAL_TUNNEL_PORT="40008"
 
 # Production 환경 설정 (TODO: 프로덕션 정보로 업데이트 필요)
 PROD_REMOTE_HOST=""  # TODO: 프로덕션 DB 호스트
@@ -61,7 +58,7 @@ PROD_LOCAL_TUNNEL_PORT="40009"  # staging과 다른 포트 사용
 REMOTE_HOST=""
 REMOTE_PORT=""
 REMOTE_USER=""
-REMOTE_PASSWORD=""  # 비워두면 프롬프트에서 입력받음
+REMOTE_PASSWORD=""  # qa 환경에서는 프롬프트에서 입력받음
 REMOTE_DB="aip_db"        # 비워두면 모든 데이터베이스, 특정 DB만 복제하려면 DB명 입력
 
 # 로컬 MySQL 설정
@@ -70,21 +67,17 @@ LOCAL_PORT="3306"
 LOCAL_USER="root"
 LOCAL_PASSWORD="aipqlalfqjsgh123!"   # 비워두면 프롬프트에서 입력받음
 
-# SSH 터널 설정
-SSH_USER=""
-SSH_HOST=""
-SSH_PORT=""
-SSH_KEY_PATH="./deploy/keys/bastion-host-key"  # 프로젝트의 실제 SSH 키 경로
-LOCAL_TUNNEL_PORT=""
-
 # 백업 파일 설정
 BACKUP_DIR=""  # setup_backup_directory()에서 설정됨
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_FILE=""  # 나중에 설정됨
 SCRIPT_CREATED_BACKUP_FILE="" # 스크립트가 생성한 백업 파일 경로 (정리용)
 
-# mysqldump 옵션
-MYSQLDUMP_OPTIONS="--single-transaction --routines --triggers --events --hex-blob --complete-insert --disable-keys --extended-insert --protocol=TCP --ssl-mode=DISABLED --set-gtid-purged=OFF"
+# mysqldump 옵션 - GCP Cloud SQL은 SSL 연결 필수
+MYSQLDUMP_OPTIONS="--single-transaction --routines --triggers --events --hex-blob --complete-insert --disable-keys --extended-insert --protocol=TCP --ssl-mode=REQUIRED --set-gtid-purged=OFF"
+
+# MySQL 연결 옵션 - GCP Cloud SQL은 SSL 연결 필수
+MYSQL_CONNECTION_OPTIONS="--protocol=TCP --ssl-mode=REQUIRED"
 
 # =============================================================================
 # 함수 정의
@@ -100,10 +93,6 @@ load_environment_config() {
             REMOTE_HOST="$STAGING_REMOTE_HOST"
             REMOTE_PORT="$STAGING_REMOTE_PORT"
             REMOTE_USER="$STAGING_REMOTE_USER"
-            SSH_USER="$STAGING_SSH_USER"
-            SSH_HOST="$STAGING_SSH_HOST"
-            SSH_PORT="$STAGING_SSH_PORT"
-            LOCAL_TUNNEL_PORT="$STAGING_LOCAL_TUNNEL_PORT"
             ;;
         "prod")
             log_info "Production 환경 설정 로드 중..."
@@ -132,8 +121,11 @@ load_environment_config() {
 
     log_success "환경 설정 로드 완료: $env"
     log_info "원격 호스트: $REMOTE_HOST:$REMOTE_PORT"
-    log_info "SSH 호스트: $SSH_HOST:$SSH_PORT"
-    log_info "로컬 터널 포트: $LOCAL_TUNNEL_PORT"
+    log_info "SSL 모드: REQUIRED (GCP Cloud SQL 필수)"
+    if [ -n "$SSH_HOST" ]; then
+        log_info "SSH 호스트: $SSH_HOST:$SSH_PORT"
+        log_info "로컬 터널 포트: $LOCAL_TUNNEL_PORT"
+    fi
 }
 
 # 환경 설정 유효성 검사
@@ -143,10 +135,6 @@ validate_environment_config() {
     [ -z "$REMOTE_HOST" ] && missing_vars+=("REMOTE_HOST")
     [ -z "$REMOTE_PORT" ] && missing_vars+=("REMOTE_PORT")
     [ -z "$REMOTE_USER" ] && missing_vars+=("REMOTE_USER")
-    [ -z "$SSH_USER" ] && missing_vars+=("SSH_USER")
-    [ -z "$SSH_HOST" ] && missing_vars+=("SSH_HOST")
-    [ -z "$SSH_PORT" ] && missing_vars+=("SSH_PORT")
-    [ -z "$LOCAL_TUNNEL_PORT" ] && missing_vars+=("LOCAL_TUNNEL_PORT")
 
     if [ ${#missing_vars[@]} -ne 0 ]; then
         log_error "다음 설정 값들이 누락되었습니다: ${missing_vars[*]}"
@@ -161,8 +149,7 @@ show_current_config() {
     log_info "현재 환경 설정:"
     echo "  환경: $ENVIRONMENT"
     echo "  원격 DB: $REMOTE_HOST:$REMOTE_PORT"
-    echo "  SSH: $SSH_USER@$SSH_HOST:$SSH_PORT"
-    echo "  터널 포트: $LOCAL_TUNNEL_PORT"
+    echo "  SSL 모드: REQUIRED (GCP Cloud SQL)"
     echo "  백업 디렉토리: $BACKUP_DIR"
 }
 
@@ -185,100 +172,6 @@ setup_backup_directory() {
     BACKUP_DIR="./db_backups/${ENVIRONMENT}"
     mkdir -p ${BACKUP_DIR}
     log_success "백업 디렉토리 생성: ${BACKUP_DIR}"
-}
-
-# SSH 키 파일 존재 여부 확인
-check_ssh_key() {
-    local key_path="${SSH_KEY_PATH/#\~/$HOME}"  # ~ 경로를 실제 홈 디렉토리로 변환
-
-    log_info "SSH 키 파일 확인: $key_path"
-
-    if [ ! -f "$key_path" ]; then
-        log_error "SSH 키 파일을 찾을 수 없습니다: $key_path"
-        log_info "SSH 키 생성 방법:"
-        log_info "  1. ssh-keygen -t rsa -b 4096 -C \"your_email@example.com\""
-        log_info "  2. ssh-copy-id ${SSH_USER}@${SSH_HOST}"
-        log_info "또는 기존 SSH 키 경로를 스크립트에서 수정하세요"
-        return 1
-    fi
-
-    # 키 파일 권한 확인
-    local perms=$(stat -c "%a" "$key_path" 2>/dev/null || stat -f "%A" "$key_path" 2>/dev/null)
-    if [ "$perms" != "600" ] && [ "$perms" != "400" ]; then
-        log_warning "SSH 키 파일 권한이 안전하지 않습니다: $perms"
-        log_info "권한 수정: chmod 600 $key_path"
-        chmod 600 "$key_path" 2>/dev/null || {
-            log_error "SSH 키 파일 권한 수정 실패"
-            return 1
-        }
-        log_success "SSH 키 파일 권한을 600으로 수정했습니다"
-    fi
-
-    log_success "SSH 키 파일 확인 완료: $key_path"
-    return 0
-}
-
-# SSH 연결 테스트
-test_ssh_connection() {
-    log_info "SSH 연결 테스트 중..."
-
-    local key_path="${SSH_KEY_PATH/#\~/$HOME}"
-    local ssh_cmd="ssh -i \"$key_path\" -p ${SSH_PORT} -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} \"echo 'SSH 연결 성공'\""
-
-    log_info "실행 명령어: ssh -i \"$key_path\" -p ${SSH_PORT} -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} \"echo 'SSH 연결 성공'\""
-
-    # SSH 연결 테스트 (짧은 타임아웃으로)
-    if ssh -i "$key_path" \
-           -p ${SSH_PORT} \
-           -o ConnectTimeout=10 \
-           -o BatchMode=yes \
-           -o StrictHostKeyChecking=no \
-           ${SSH_USER}@${SSH_HOST} \
-           "echo 'SSH 연결 성공'" 2>/dev/null; then
-        log_success "SSH 연결 테스트 성공"
-        return 0
-    else
-        log_error "SSH 연결 테스트 실패"
-        log_info "다음 사항을 확인해주세요:"
-        log_info "  1. SSH 키가 서버에 등록되어 있는지 확인"
-        log_info "  2. 사용자명과 호스트 주소 확인: ${SSH_USER}@${SSH_HOST}"
-        log_info "  3. 포트 번호 확인: ${SSH_PORT}"
-        log_info "  4. 방화벽 설정 확인"
-        return 1
-    fi
-}
-
-# 시작 전 포트 정리
-cleanup_existing_tunnels() {
-    log_info "기존 SSH 터널 정리 중..."
-
-    # 환경이 설정되기 전이므로 모든 알려진 포트 확인
-    local check_ports=("40008" "40009")
-
-    for port in "${check_ports[@]}"; do
-        if nc -z localhost ${port} 2>/dev/null; then
-            log_warning "포트 ${port}가 이미 사용 중입니다. 정리합니다."
-
-            # 해당 포트의 SSH 터널 프로세스 찾아서 종료
-            local ssh_pids=$(ps aux | grep "ssh.*${port}:" | grep -v grep | awk '{print $2}' 2>/dev/null || true)
-            if [ -n "$ssh_pids" ]; then
-                echo "$ssh_pids" | xargs kill -TERM 2>/dev/null || true
-                sleep 1
-                echo "$ssh_pids" | xargs kill -KILL 2>/dev/null || true
-            fi
-
-            # 다른 프로세스도 확인
-            local other_pids=$(lsof -ti :${port} 2>/dev/null || true)
-            if [ -n "$other_pids" ]; then
-                log_warning "포트 ${port}를 사용하는 다른 프로세스: $other_pids"
-                echo "$other_pids" | xargs kill -TERM 2>/dev/null || true
-                sleep 1
-            fi
-        fi
-    done
-
-    sleep 1
-    log_success "기존 터널 정리 완료"
 }
 
 # SSH 터널 생성
@@ -487,21 +380,21 @@ get_passwords() {
 test_connections() {
     log_info "데이터베이스 연결 테스트 중..."
 
-    # 원격 연결 테스트 (SSH 터널 통해서)
-    log_info "원격 데이터베이스 연결 테스트: localhost:${LOCAL_TUNNEL_PORT}"
+    # 원격 연결 테스트 (직접 접속 with SSL)
+    log_info "원격 데이터베이스 연결 테스트: ${REMOTE_HOST}:${REMOTE_PORT} (SSL 필수)"
 
-    # MySQL 연결 명령어
-    local mysql_test_cmd_safe="mysql -h localhost -P ${LOCAL_TUNNEL_PORT} -u ${REMOTE_USER} -p*** --protocol=TCP --ssl-mode=DISABLED -e \"SELECT 1 as test_connection;\""
+    # MySQL 연결 명령어 (비밀번호는 로그에서 숨김)
+    local mysql_test_cmd_safe="mysql -h ${REMOTE_HOST} -P ${REMOTE_PORT} -u ${REMOTE_USER} -p*** ${MYSQL_CONNECTION_OPTIONS} -e \"SELECT 1 as test_connection;\""
 
     log_info "실행 명령어: $mysql_test_cmd_safe"
 
     # 연결 테스트 시 더 상세한 오류 정보 출력
     local mysql_output
-    mysql_output=$(mysql -h localhost -P ${LOCAL_TUNNEL_PORT} -u ${REMOTE_USER} -p${REMOTE_PASSWORD} --protocol=TCP --ssl-mode=DISABLED -e "SELECT 1 as test_connection;" 2>&1)
+    mysql_output=$(mysql -h ${REMOTE_HOST} -P ${REMOTE_PORT} -u ${REMOTE_USER} -p${REMOTE_PASSWORD} ${MYSQL_CONNECTION_OPTIONS} -e "SELECT 1 as test_connection;" 2>&1)
     local mysql_exit_code=$?
 
     if [ $mysql_exit_code -eq 0 ]; then
-        log_success "원격 데이터베이스 연결 성공"
+        log_success "원격 데이터베이스 연결 성공 (SSL 연결)"
         log_info "연결 결과: $mysql_output"
     else
         log_error "원격 데이터베이스 연결 실패 (exit code: $mysql_exit_code)"
@@ -510,25 +403,14 @@ test_connections() {
         # 추가 진단 정보
         log_info "=== 연결 문제 진단 시작 ==="
 
-        # 1. 터널 포트 상태 재확인
-        log_info "1. 터널 포트 상태 재확인:"
-        local nc_test_cmd="nc -z localhost ${LOCAL_TUNNEL_PORT}"
+        # 1. 네트워크 연결 테스트
+        log_info "1. 네트워크 연결 테스트:"
+        local nc_test_cmd="nc -z ${REMOTE_HOST} ${REMOTE_PORT}"
         log_info "실행 명령어: $nc_test_cmd"
-        if nc -z localhost ${LOCAL_TUNNEL_PORT} 2>/dev/null; then
-            log_success "포트 ${LOCAL_TUNNEL_PORT} 열려있음"
+        if nc -z ${REMOTE_HOST} ${REMOTE_PORT} 2>/dev/null; then
+            log_success "원격 서버 ${REMOTE_HOST}:${REMOTE_PORT} 연결 가능"
         else
-            log_error "포트 ${LOCAL_TUNNEL_PORT} 닫혀있음 - SSH 터널 문제"
-        fi
-
-        # 2. SSH 터널 프로세스 확인
-        log_info "2. SSH 터널 프로세스 확인:"
-        local ps_cmd="ps aux | grep \"ssh.*${LOCAL_TUNNEL_PORT}:\" | grep -v grep"
-        log_info "실행 명령어: $ps_cmd"
-        local tunnel_processes=$(ps aux | grep "ssh.*${LOCAL_TUNNEL_PORT}:" | grep -v grep)
-        if [ -n "$tunnel_processes" ]; then
-            log_info "터널 프로세스: $tunnel_processes"
-        else
-            log_error "SSH 터널 프로세스가 없습니다"
+            log_error "원격 서버 ${REMOTE_HOST}:${REMOTE_PORT} 연결 불가"
         fi
 
         log_info "=== 연결 문제 진단 완료 ==="
@@ -537,10 +419,10 @@ test_connections() {
         log_info "연결 실패 원인 확인사항:"
         log_info "  1. 비밀번호가 올바른지 확인"
         log_info "  2. 사용자명이 올바른지 확인 (현재: $REMOTE_USER)"
-        log_info "  3. SSH 터널이 정상 작동하는지 확인"
-        log_info "  4. bastion 서버의 cloud-sql-proxy가 실행 중인지 확인"
-        log_info "  5. MySQL 사용자 권한 확인 (원격 접속 허용 여부)"
-        log_info "  6. bastion 서버에서 직접 연결 테스트: mysql -h localhost -P ${REMOTE_PORT} -u ${REMOTE_USER} --protocol=TCP -p"
+        log_info "  3. GCP Cloud SQL 승인된 네트워크에 현재 IP가 포함되어 있는지 확인"
+        log_info "  4. MySQL 사용자 권한 확인 (원격 접속 허용 여부)"
+        log_info "  5. SSL 연결이 제대로 설정되어 있는지 확인"
+        log_info "  6. 네트워크 연결 상태 확인 및 방화벽 설정 확인"
 
         return 1
     fi
@@ -551,7 +433,7 @@ test_connections() {
         return 0
     fi
 
-    # 로컬 연결 테스트
+    # 로컬 연결 테스트 (로컬에서는 SSL 비활성화 가능)
     log_info "로컬 데이터베이스 연결 테스트: ${LOCAL_HOST}:${LOCAL_PORT}"
 
     local local_mysql_cmd_safe="mysql -h ${LOCAL_HOST} -P ${LOCAL_PORT} -u ${LOCAL_USER} -p*** --protocol=TCP --ssl-mode=DISABLED -e \"SELECT 1 as test_connection;\""
@@ -577,7 +459,7 @@ test_connections() {
 
 # 원격 데이터베이스 백업
 backup_remote_db() {
-    log_info "원격 데이터베이스 백업 중... (환경: $ENVIRONMENT)"
+    log_info "원격 데이터베이스 백업 중... (환경: $ENVIRONMENT, SSL 필수)"
 
     # 백업 파일명에 환경 정보 포함
     BACKUP_FILE="${BACKUP_DIR}/${ENVIRONMENT}_db_backup_${TIMESTAMP}.sql"
@@ -585,10 +467,10 @@ backup_remote_db() {
 
     if [ -z "$REMOTE_DB" ]; then
         # 모든 데이터베이스 백업 (시스템 DB 제외)
-        local mysqldump_cmd_safe="mysqldump -h localhost -P ${LOCAL_TUNNEL_PORT} -u ${REMOTE_USER} -p*** ${MYSQLDUMP_OPTIONS} --all-databases [시스템 테이블 제외]"
+        local mysqldump_cmd_safe="mysqldump -h ${REMOTE_HOST} -P ${REMOTE_PORT} -u ${REMOTE_USER} -p*** ${MYSQLDUMP_OPTIONS} --all-databases [시스템 테이블 제외]"
         log_info "실행 명령어: $mysqldump_cmd_safe > ${BACKUP_FILE}"
 
-        mysqldump -h localhost -P ${LOCAL_TUNNEL_PORT} \
+        mysqldump -h ${REMOTE_HOST} -P ${REMOTE_PORT} \
                   -u ${REMOTE_USER} -p${REMOTE_PASSWORD} \
                   ${MYSQLDUMP_OPTIONS} \
                   --all-databases \
@@ -600,10 +482,10 @@ backup_remote_db() {
                   --ignore-table=mysql.proxies_priv > ${BACKUP_FILE}
     else
         # 특정 데이터베이스만 백업 (데이터베이스 생성 구문 포함)
-        local mysqldump_cmd_safe="mysqldump -h localhost -P ${LOCAL_TUNNEL_PORT} -u ${REMOTE_USER} -p*** ${MYSQLDUMP_OPTIONS} --databases ${REMOTE_DB}"
+        local mysqldump_cmd_safe="mysqldump -h ${REMOTE_HOST} -P ${REMOTE_PORT} -u ${REMOTE_USER} -p*** ${MYSQLDUMP_OPTIONS} --databases ${REMOTE_DB}"
         log_info "실행 명령어: $mysqldump_cmd_safe > ${BACKUP_FILE}"
 
-        mysqldump -h localhost -P ${LOCAL_TUNNEL_PORT} \
+        mysqldump -h ${REMOTE_HOST} -P ${REMOTE_PORT} \
                   -u ${REMOTE_USER} -p${REMOTE_PASSWORD} \
                   ${MYSQLDUMP_OPTIONS} \
                   --databases ${REMOTE_DB} > ${BACKUP_FILE}
@@ -620,7 +502,7 @@ backup_remote_db() {
         {
             echo "-- Database backup from ${ENVIRONMENT} environment"
             echo "-- Backup created at: $(date)"
-            echo "-- Source: ${REMOTE_HOST}:${REMOTE_PORT}"
+            echo "-- Source: ${REMOTE_HOST}:${REMOTE_PORT} (SSL connection)"
             echo "-- "
             cat "${BACKUP_FILE}"
         } > "$temp_file"
@@ -725,12 +607,12 @@ restore_to_local() {
 show_databases() {
     log_info "원격 데이터베이스 목록 (환경: $ENVIRONMENT):"
 
-    local remote_db_cmd_safe="mysql -h localhost -P ${LOCAL_TUNNEL_PORT} -u ${REMOTE_USER} -p*** --protocol=TCP --ssl-mode=DISABLED -e \"SHOW DATABASES;\""
+    local remote_db_cmd_safe="mysql -h ${REMOTE_HOST} -P ${REMOTE_PORT} -u ${REMOTE_USER} -p*** ${MYSQL_CONNECTION_OPTIONS} -e \"SHOW DATABASES;\""
     log_info "실행 명령어: $remote_db_cmd_safe"
 
-    mysql -h localhost -P ${LOCAL_TUNNEL_PORT} \
+    mysql -h ${REMOTE_HOST} -P ${REMOTE_PORT} \
           -u ${REMOTE_USER} -p${REMOTE_PASSWORD} \
-          --protocol=TCP --ssl-mode=DISABLED \
+          ${MYSQL_CONNECTION_OPTIONS} \
           -e "SHOW DATABASES;" | grep -v "Database\|information_schema\|performance_schema\|mysql\|sys"
 
     echo
@@ -748,11 +630,6 @@ show_databases() {
 # 정리 작업
 cleanup() {
     log_info "정리 작업 중..."
-    close_ssh_tunnel
-
-    # 추가 안전 정리 (혹시 모를 좀비 프로세스들)
-    pkill -f "ssh.*40008:" 2>/dev/null || true
-    pkill -f "ssh.*40009:" 2>/dev/null || true
 
     # 스크립트가 생성한 백업 파일 정리 (백업만 하는 경우가 아니고, 파일이 존재할 경우)
     if [ "$BACKUP_ONLY" != "true" ] && [ -n "$SCRIPT_CREATED_BACKUP_FILE" ] && [ -f "$SCRIPT_CREATED_BACKUP_FILE" ]; then
@@ -767,8 +644,7 @@ cleanup() {
 
 # 긴급 정리 (SIGINT, SIGTERM 신호 처리)
 emergency_cleanup() {
-    log_warning "스크립트가 중단되었습니다. 긴급 정리를 수행합니다..."
-    force_cleanup_ports
+    log_warning "스크립트가 중단되었습니다. 정리를 수행합니다..."
     exit 1
 }
 
@@ -790,7 +666,7 @@ show_help() {
     echo "  -r, --restore FILE      기존 백업 파일로부터 복원 (해당 파일은 삭제하지 않음)"
     echo "  -c, --config            현재 환경 설정 표시"
     echo "  --check-prod            프로덕션 설정 상태 확인"
-    echo "  --cleanup               모든 SSH 터널 포트 강제 정리"
+    echo "  --cleanup               임시 파일 정리"
     echo
     echo "예시:"
     echo "  $0 staging              # Staging 환경 전체 복제 (백업 파일 자동 삭제)"
@@ -800,14 +676,16 @@ show_help() {
     echo "  $0 staging -r backup.sql # 기존 백업으로부터 복원 (backup.sql 유지)"
     echo "  $0 staging -c           # Staging 환경 설정 확인"
     echo "  $0 --check-prod         # 프로덕션 설정 상태 확인"
-    echo "  $0 --cleanup            # 모든 SSH 터널 포트 강제 정리"
+    echo "  $0 --cleanup            # 임시 파일 정리"
     echo
     echo "환경별 설정:"
-    echo "  • Staging: 34.22.105.118:53306 (포트 40008)"
-    echo "  • Production: 미설정 (포트 40009)"
+    echo "  • Staging (QA): 34.64.164.212:3306 (SSL 필수)"
+    echo "  • Production: 미설정"
     echo
-    echo "포트 문제 해결:"
-    echo "  터널 포트가 이미 사용 중이면 --cleanup 옵션을 먼저 실행하세요"
+    echo "주요 개선사항:"
+    echo "  • GCP Cloud SQL SSL 연결 필수 설정 적용"
+    echo "  • 원격 연결: --ssl-mode=REQUIRED"
+    echo "  • 로컬 연결: --ssl-mode=DISABLED (기본)"
 }
 
 # =============================================================================
@@ -839,7 +717,9 @@ case $1 in
         exit 0
         ;;
     --cleanup)
-        force_cleanup_ports
+        log_info "임시 파일 정리 중..."
+        rm -f ./db_backups/*/*.tmp 2>/dev/null || true
+        log_success "임시 파일 정리 완료"
         exit 0
         ;;
     -h|--help)
@@ -891,9 +771,6 @@ done
 main() {
     log_info "=== GCP Cloud SQL to Local MySQL 복제 시작 (환경: $ENVIRONMENT) ==="
 
-    # 시작 전 기존 터널 정리
-    cleanup_existing_tunnels
-
     # 환경별 설정 로드
     if ! load_environment_config "$ENVIRONMENT"; then
         exit 1
@@ -901,16 +778,6 @@ main() {
 
     # 설정 유효성 검사
     if ! validate_environment_config; then
-        exit 1
-    fi
-
-    # SSH 키 파일 확인
-    if ! check_ssh_key; then
-        exit 1
-    fi
-
-    # SSH 연결 테스트
-    if ! test_ssh_connection; then
         exit 1
     fi
 
@@ -923,10 +790,6 @@ main() {
         exit 0
     fi
 
-    # SSH 터널 생성
-    if ! create_ssh_tunnel; then
-        exit 1
-    fi
 
     # 비밀번호 입력
     get_passwords
@@ -982,7 +845,7 @@ main() {
 check_requirements() {
     local missing_tools=()
 
-    for tool in mysql mysqldump ssh nc lsof; do
+    for tool in mysql mysqldump nc; do
         if ! command -v $tool &> /dev/null; then
             missing_tools+=($tool)
         fi
@@ -990,8 +853,8 @@ check_requirements() {
 
     if [ ${#missing_tools[@]} -ne 0 ]; then
         log_error "다음 도구들이 설치되어 있지 않습니다: ${missing_tools[*]}"
-        log_info "macOS: brew install mysql-client openssh"
-        log_info "Ubuntu/Debian: sudo apt-get install mysql-client openssh-client netcat lsof"
+        log_info "macOS: brew install mysql-client netcat"
+        log_info "Ubuntu/Debian: sudo apt-get install mysql-client netcat"
         exit 1
     fi
 }
