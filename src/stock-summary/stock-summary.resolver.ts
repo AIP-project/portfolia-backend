@@ -50,7 +50,7 @@ export class StockSummaryResolver {
 
   @ResolveField("pricePerShare", () => Float, { nullable: true, description: "구매한 개당 가격" })
   async resolvePricePerUnit(@Parent() stockSummary: StockSummary) {
-    if (stockSummary.type === SummaryType.CASH || stockSummary.quantity) return 0
+    if (stockSummary.type === SummaryType.CASH || stockSummary.quantity === 0) return 0
     return stockSummary.amount / stockSummary.quantity
   }
 

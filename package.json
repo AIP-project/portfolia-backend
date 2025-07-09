@@ -35,6 +35,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "db-sync-staging": "./script/db-replication.sh staging",
+    "db-sync-prod": "./script/db-replication.sh prod",
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",

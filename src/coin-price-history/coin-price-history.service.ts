@@ -6,6 +6,7 @@ import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
 import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
 import { PrismaService } from "../common/prisma"
+import { Prisma } from "@prisma/client"
 
 @Injectable()
 export class CoinPriceHistoryService {
@@ -99,12 +100,14 @@ export class CoinPriceHistoryService {
     }
 
     // 1. 각 symbol 별로 가장 큰 id (최신 id)를 조회합니다.
-    const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>`
-      SELECT MAX(id) as max_id
-      FROM coin_price_history
-      WHERE symbol IN (${symbols.map((s) => `'${s}'`).join(",")})
-      GROUP BY symbol
-    `
+    const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>(
+      Prisma.sql`
+        SELECT MAX(id) as max_id
+        FROM coin_price_history
+        WHERE symbol IN (${Prisma.join(symbols)})
+        GROUP BY symbol
+      `,
+    )
 
     // 결과가 없으면 빈 배열 반환
     if (maxIdsResult.length === 0) {

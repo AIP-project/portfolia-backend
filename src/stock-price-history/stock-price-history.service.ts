@@ -6,7 +6,7 @@ import { catchError, map } from "rxjs/operators"
 import { AxiosError } from "axios"
 import { ExternalServiceException, InterfaceConfig, NestConfig } from "../common"
 import { PrismaService } from "../common/prisma"
-import { CurrencyType } from "@prisma/client"
+import { CurrencyType, Prisma } from "@prisma/client"
 
 export interface StockSearchResult {
   symbol: string
@@ -199,8 +199,8 @@ export class StockPriceHistoryService {
 
     // stockCompanyCode가 없는 심볼들을 수집하여 한번에 처리
     const noStockCompanySymbols = distinctStockGroups
-      .filter(group => !group.stockCompanyCode)
-      .map(group => group.symbol)
+      .filter((group) => !group.stockCompanyCode)
+      .map((group) => group.symbol)
 
     if (noStockCompanySymbols.length > 0) {
       this.logger.warn(`No stock company codes found for symbols: ${noStockCompanySymbols.join(", ")}`)
@@ -208,7 +208,7 @@ export class StockPriceHistoryService {
     }
 
     // stockCompanyCode가 있는 것들만 가격 업데이트
-    const validStockGroups = distinctStockGroups.filter(group => group.stockCompanyCode)
+    const validStockGroups = distinctStockGroups.filter((group) => group.stockCompanyCode)
 
     for (const distinctStockGroup of validStockGroups) {
       try {
@@ -279,12 +279,14 @@ export class StockPriceHistoryService {
       return []
     }
 
-    const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>`
-      SELECT MAX(id) as max_id
-      FROM stock_price_history
-      WHERE symbol IN (${symbols.map((s) => `'${s}'`).join(",")})
-      GROUP BY symbol
-    `
+    const maxIdsResult = await this.prisma.$queryRaw<Array<{ max_id: number }>>(
+      Prisma.sql`
+        SELECT MAX(id) as max_id
+        FROM stock_price_history
+        WHERE symbol IN (${Prisma.join(symbols)})
+        GROUP BY symbol
+      `,
+    )
 
     if (maxIdsResult.length === 0) {
       return []

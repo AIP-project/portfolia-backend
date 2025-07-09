@@ -46,13 +46,9 @@ STAGING_REMOTE_PORT="3306"
 STAGING_REMOTE_USER="root"
 
 # Production 환경 설정 (TODO: 프로덕션 정보로 업데이트 필요)
-PROD_REMOTE_HOST=""  # TODO: 프로덕션 DB 호스트
-PROD_REMOTE_PORT=""  # TODO: 프로덕션 DB 포트
-PROD_REMOTE_USER=""  # TODO: 프로덕션 DB 사용자
-PROD_SSH_USER=""     # TODO: 프로덕션 SSH 사용자
-PROD_SSH_HOST=""     # TODO: 프로덕션 SSH 호스트
-PROD_SSH_PORT="22"
-PROD_LOCAL_TUNNEL_PORT="40009"  # staging과 다른 포트 사용
+PROD_REMOTE_HOST="34.64.34.58"
+PROD_REMOTE_PORT="3306"
+PROD_REMOTE_USER="root"
 
 # 현재 환경에 따른 설정 변수들
 REMOTE_HOST=""
@@ -97,20 +93,9 @@ load_environment_config() {
         "prod")
             log_info "Production 환경 설정 로드 중..."
 
-            # 프로덕션 설정이 비어있는지 확인
-            if [ -z "$PROD_REMOTE_HOST" ]; then
-                log_error "프로덕션 환경 설정이 완료되지 않았습니다"
-                log_info "스크립트 상단의 PROD_* 변수들을 설정해주세요"
-                return 1
-            fi
-
             REMOTE_HOST="$PROD_REMOTE_HOST"
             REMOTE_PORT="$PROD_REMOTE_PORT"
             REMOTE_USER="$PROD_REMOTE_USER"
-            SSH_USER="$PROD_SSH_USER"
-            SSH_HOST="$PROD_SSH_HOST"
-            SSH_PORT="$PROD_SSH_PORT"
-            LOCAL_TUNNEL_PORT="$PROD_LOCAL_TUNNEL_PORT"
             ;;
         *)
             log_error "지원하지 않는 환경: $env"
@@ -122,10 +107,6 @@ load_environment_config() {
     log_success "환경 설정 로드 완료: $env"
     log_info "원격 호스트: $REMOTE_HOST:$REMOTE_PORT"
     log_info "SSL 모드: REQUIRED (GCP Cloud SQL 필수)"
-    if [ -n "$SSH_HOST" ]; then
-        log_info "SSH 호스트: $SSH_HOST:$SSH_PORT"
-        log_info "로컬 터널 포트: $LOCAL_TUNNEL_PORT"
-    fi
 }
 
 # 환경 설정 유효성 검사
@@ -162,8 +143,6 @@ check_prod_config() {
     echo "  PROD_REMOTE_HOST: GCP Cloud SQL 프로덕션 IP"
     echo "  PROD_REMOTE_PORT: 프로덕션 MySQL 포트"
     echo "  PROD_REMOTE_USER: 프로덕션 DB 사용자명"
-    echo "  PROD_SSH_USER: 프로덕션 SSH 사용자명"
-    echo "  PROD_SSH_HOST: 프로덕션 SSH 호스트"
     echo
 }
 
@@ -172,186 +151,6 @@ setup_backup_directory() {
     BACKUP_DIR="./db_backups/${ENVIRONMENT}"
     mkdir -p ${BACKUP_DIR}
     log_success "백업 디렉토리 생성: ${BACKUP_DIR}"
-}
-
-# SSH 터널 생성
-create_ssh_tunnel() {
-    log_info "SSH 터널 생성 중..."
-
-    local key_path="${SSH_KEY_PATH/#\~/$HOME}"
-
-    # 해당 포트가 이미 사용 중인지 확인하고 정리
-    if nc -z localhost ${LOCAL_TUNNEL_PORT} 2>/dev/null; then
-        log_warning "포트 ${LOCAL_TUNNEL_PORT}가 이미 사용 중입니다. 기존 연결을 정리합니다."
-
-        # 해당 포트를 사용하는 SSH 터널 프로세스 종료
-        local existing_pids=$(ps aux | grep "ssh.*${LOCAL_TUNNEL_PORT}:" | grep -v grep | awk '{print $2}' 2>/dev/null || true)
-        if [ -n "$existing_pids" ]; then
-            echo "$existing_pids" | xargs kill -TERM 2>/dev/null || true
-            sleep 2
-            echo "$existing_pids" | xargs kill -KILL 2>/dev/null || true
-        fi
-
-        # 다른 프로세스도 정리
-        local other_pids=$(lsof -ti :${LOCAL_TUNNEL_PORT} 2>/dev/null || true)
-        if [ -n "$other_pids" ]; then
-            echo "$other_pids" | xargs kill -TERM 2>/dev/null || true
-            sleep 1
-        fi
-
-        # 정리 후 잠시 대기
-        sleep 2
-    fi
-
-    # SSH 터널 생성 (백그라운드 실행)
-    # 중간 컴퓨트 서버(bastion)를 통해 localhost:53306으로 터널링
-    log_info "새로운 SSH 터널 생성: localhost:${LOCAL_TUNNEL_PORT} -> localhost:${REMOTE_PORT} (via bastion)"
-
-    local ssh_tunnel_cmd="ssh -f -N -L ${LOCAL_TUNNEL_PORT}:localhost:${REMOTE_PORT} -p ${SSH_PORT} -i \"$key_path\" -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes ${SSH_USER}@${SSH_HOST}"
-
-    log_info "실행 명령어: ssh -f -N -L ${LOCAL_TUNNEL_PORT}:localhost:${REMOTE_PORT} -p ${SSH_PORT} -i \"$key_path\" [SSH 옵션들] ${SSH_USER}@${SSH_HOST}"
-
-    ssh -f -N -L ${LOCAL_TUNNEL_PORT}:localhost:${REMOTE_PORT} \
-        -p ${SSH_PORT} \
-        -i "$key_path" \
-        -o ConnectTimeout=30 \
-        -o ServerAliveInterval=60 \
-        -o ServerAliveCountMax=3 \
-        -o StrictHostKeyChecking=no \
-        -o ExitOnForwardFailure=yes \
-        ${SSH_USER}@${SSH_HOST}
-
-    local ssh_exit_code=$?
-
-    if [ $ssh_exit_code -ne 0 ]; then
-        log_error "SSH 터널 생성 명령 실패 (exit code: $ssh_exit_code)"
-        return 1
-    fi
-
-    # 터널 연결 대기 (최대 15초)
-    local wait_count=0
-    while [ $wait_count -lt 15 ]; do
-        if nc -z localhost ${LOCAL_TUNNEL_PORT} 2>/dev/null; then
-            log_success "SSH 터널이 성공적으로 생성되었습니다 (localhost:${LOCAL_TUNNEL_PORT})"
-
-            # 터널 프로세스 정보 표시
-            local tunnel_pid=$(ps aux | grep "ssh.*${LOCAL_TUNNEL_PORT}:" | grep -v grep | awk '{print $2}' | head -1)
-            if [ -n "$tunnel_pid" ]; then
-                log_info "터널 프로세스 PID: $tunnel_pid"
-            fi
-
-            # MySQL 연결 테스트 (bastion 서버에서 확인된 방식으로)
-            log_info "터널을 통한 MySQL 연결 테스트 중..."
-            local test_cmd="timeout 5 bash -c '</dev/tcp/localhost/${LOCAL_TUNNEL_PORT}'"
-            log_info "실행 명령어: $test_cmd"
-
-            if timeout 5 bash -c "</dev/tcp/localhost/${LOCAL_TUNNEL_PORT}" 2>/dev/null; then
-                log_success "SSH 터널을 통한 MySQL 서버 연결 확인"
-            else
-                log_warning "SSH 터널은 열려있지만 MySQL 서버까지의 연결 확인 실패"
-                log_info "bastion 서버의 cloud-sql-proxy 상태를 확인해보세요"
-            fi
-
-            return 0
-        fi
-        sleep 1
-        wait_count=$((wait_count + 1))
-        log_info "터널 연결 대기 중... ($wait_count/15)"
-    done
-
-    log_error "SSH 터널 생성에 실패했습니다 (연결 타임아웃)"
-    # 실패한 SSH 프로세스 정리
-    local failed_pids=$(ps aux | grep "ssh.*${LOCAL_TUNNEL_PORT}:" | grep -v grep | awk '{print $2}' 2>/dev/null || true)
-    if [ -n "$failed_pids" ]; then
-        echo "$failed_pids" | xargs kill -KILL 2>/dev/null || true
-    fi
-    return 1
-}
-
-# SSH 터널 종료
-close_ssh_tunnel() {
-    log_info "SSH 터널 종료 중..."
-
-    # 현재 환경의 터널 포트가 설정되어 있으면 사용, 아니면 기본값들 사용
-    local ports_to_check=()
-
-    if [ -n "$LOCAL_TUNNEL_PORT" ]; then
-        ports_to_check+=("$LOCAL_TUNNEL_PORT")
-    fi
-
-    # 기본 포트들도 확인 (혹시 모를 상황 대비)
-    ports_to_check+=("40008" "40009")
-
-    for port in "${ports_to_check[@]}"; do
-        # SSH 터널 프로세스 종료
-        local ssh_pids=$(ps aux | grep "ssh.*${port}:" | grep -v grep | awk '{print $2}' 2>/dev/null || true)
-        if [ -n "$ssh_pids" ]; then
-            log_info "포트 ${port}의 SSH 터널 프로세스 종료 중..."
-            echo "$ssh_pids" | xargs kill -TERM 2>/dev/null || true
-            sleep 1
-            # 강제 종료가 필요한 경우
-            echo "$ssh_pids" | xargs kill -KILL 2>/dev/null || true
-        fi
-
-        # 포트를 사용하는 다른 프로세스도 확인
-        local port_pids=$(lsof -ti :${port} 2>/dev/null || true)
-        if [ -n "$port_pids" ]; then
-            log_warning "포트 ${port}를 사용하는 다른 프로세스 발견: $port_pids"
-            log_info "필요시 수동으로 종료하세요: kill $port_pids"
-        fi
-    done
-
-    # pkill로도 한번 더 정리
-    pkill -f "ssh.*40008:" 2>/dev/null || true
-    pkill -f "ssh.*40009:" 2>/dev/null || true
-
-    # 포트 해제 확인
-    sleep 1
-    for port in "${ports_to_check[@]}"; do
-        if ! nc -z localhost ${port} 2>/dev/null; then
-            log_success "포트 ${port} 해제 완료"
-        else
-            log_warning "포트 ${port}가 여전히 사용 중입니다"
-        fi
-    done
-
-    log_success "SSH 터널 종료 완료"
-}
-
-# 포트 강제 해제 (독립 함수)
-force_cleanup_ports() {
-    log_info "모든 SSH 터널 포트 강제 정리 중..."
-
-    # 알려진 터널 포트들
-    local all_ports=("40008" "40009")
-
-    for port in "${all_ports[@]}"; do
-        log_info "포트 ${port} 정리 중..."
-
-        # 해당 포트를 사용하는 모든 프로세스 찾기
-        local pids=$(lsof -ti :${port} 2>/dev/null || true)
-
-        if [ -n "$pids" ]; then
-            log_info "포트 ${port}를 사용하는 프로세스: $pids"
-
-            # TERM 신호로 정상 종료 시도
-            echo "$pids" | xargs kill -TERM 2>/dev/null || true
-            sleep 2
-
-            # 아직 살아있으면 KILL 신호로 강제 종료
-            local remaining_pids=$(lsof -ti :${port} 2>/dev/null || true)
-            if [ -n "$remaining_pids" ]; then
-                log_warning "포트 ${port} 강제 종료: $remaining_pids"
-                echo "$remaining_pids" | xargs kill -KILL 2>/dev/null || true
-            fi
-        fi
-
-        # SSH 터널 관련 프로세스 정리
-        pkill -f "ssh.*${port}:" 2>/dev/null || true
-    done
-
-    sleep 1
-    log_success "포트 정리 완료"
 }
 
 # 비밀번호 입력받기
