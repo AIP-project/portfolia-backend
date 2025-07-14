@@ -44,7 +44,7 @@ export class CoinSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       coinSummary.currency,
-      coinSummary.amount
+      coinSummary.amount,
     )
   }
 
@@ -70,7 +70,24 @@ export class CoinSummaryResolver {
 
     if (!historyCurrencyRate || !summaryCurrencyRate) return 0
 
-    return (coinSummary.quantity * coinPriceHistory.price * historyCurrencyRate) / summaryCurrencyRate
+    return ((coinSummary.quantity * coinPriceHistory.price) / historyCurrencyRate) * summaryCurrencyRate
+  }
+
+  @ResolveField("pricePerShareCurrentAmount", () => Float, {
+    nullable: true,
+    description: "현재 가치 개당 가격",
+  })
+  async resolvePricePerUnitCurrentAmount(@Parent() coinSummary: CoinSummary): Promise<number> {
+    if (!coinSummary.quantity) {
+      return 0
+    }
+
+    const currentAmount = await this.resolveCurrentAmount(coinSummary)
+    if (!currentAmount) {
+      return 0
+    }
+
+    return currentAmount / coinSummary.quantity
   }
 
   @ResolveField("currentAmountInDefaultCurrency", () => Float, {
@@ -88,7 +105,7 @@ export class CoinSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       coinSummary.currency,
-      currentAmount
+      currentAmount,
     )
   }
 
@@ -110,7 +127,7 @@ export class CoinSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       coinPriceHistory.currency as CurrencyType,
-      coinPriceHistory.price
+      coinPriceHistory.price,
     )
   }
 
@@ -168,7 +185,7 @@ export class CoinSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       coinSummary.currency,
-      totalAccountValue
+      totalAccountValue,
     )
   }
 }
