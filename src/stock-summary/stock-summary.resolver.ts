@@ -44,7 +44,7 @@ export class StockSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       stockSummary.currency,
-      stockSummary.amount
+      stockSummary.amount,
     )
   }
 
@@ -64,6 +64,23 @@ export class StockSummaryResolver {
     return stockSummary.quantity * stockPriceHistory.base
   }
 
+  @ResolveField("pricePerShareCurrentAmount", () => Float, {
+    nullable: true,
+    description: "현재 가치 개당 가격",
+  })
+  async resolvePricePerUnitCurrentAmount(@Parent() stockSummary: StockSummary): Promise<number> {
+    if (!stockSummary.quantity) {
+      return 0
+    }
+
+    const currentAmount = await this.resolveCurrentAmount(stockSummary)
+    if (!currentAmount) {
+      return 0
+    }
+
+    return currentAmount / stockSummary.quantity
+  }
+
   @ResolveField("currentAmountInDefaultCurrency", () => Float, {
     nullable: true,
     description: "계정 기본 통화로 환산한 현재 가치 총 금액",
@@ -79,7 +96,7 @@ export class StockSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       stockSummary.currency,
-      currentAmount
+      currentAmount,
     )
   }
 
@@ -100,7 +117,7 @@ export class StockSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       stockSummary.currency,
-      stockPriceHistory.base
+      stockPriceHistory.base,
     )
   }
 
