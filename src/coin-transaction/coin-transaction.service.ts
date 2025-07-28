@@ -47,12 +47,12 @@ export class CoinTransactionService {
         type: SummaryType.SUMMARY,
         symbol: coinTransactionInput.symbol,
         currency: coinTransactionInput.currency,
-        isDelete: false,
       },
     })
 
     if (existCoinSummary) {
       cleanInput.name = coinTransactionInput.name
+      cleanInput.currency = existCoinSummary.currency
     }
 
     const existSummary = {
@@ -107,6 +107,7 @@ export class CoinTransactionService {
         amount: {
           increment: sign * Number(restCleanInput.amount),
         },
+        isDelete: false,
       },
     }
 

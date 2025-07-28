@@ -35,7 +35,7 @@ export class BankSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       bankSummary.currency,
-      bankSummary.balance
+      bankSummary.balance,
     )
   }
 
@@ -51,7 +51,7 @@ export class BankSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       bankSummary.currency,
-      bankSummary.totalDepositAmount
+      bankSummary.totalDepositAmount,
     )
   }
 
@@ -67,7 +67,7 @@ export class BankSummaryResolver {
       this.exchangeDataLoader,
       jwtPayload.currency,
       bankSummary.currency,
-      bankSummary.totalWithdrawalAmount
+      bankSummary.totalWithdrawalAmount,
     )
   }
 }

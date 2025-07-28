@@ -1,5 +1,6 @@
 import { CurrencyType } from "@prisma/client"
 import { ExchangeDataLoader } from "../../exchange/exchange.dataloader"
+
 /**
  * Static utility 함수들
  */
