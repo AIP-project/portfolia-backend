@@ -1,6 +1,0 @@
-export * from "./stock-summary.input"
-export * from "./create-stock-summary.input"
-export * from "./update-stock-summary.input"
-export * from "./stock-summaries.args"
-export * from "./stock-summaries.model"
-export * from "././stock-summary.model"
