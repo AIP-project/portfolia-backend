@@ -1,6 +1,0 @@
-export * from "./account.input"
-export * from "./accounts.args"
-export * from "./accounts.model"
-export * from "./account.model"
-export * from "./create-account.input"
-export * from "./update-account.input"

@@ -18,7 +18,16 @@
       "Bash(yarn prisma:generate)",
       "Bash(mv:*)",
       "Bash(npx ts-node:*)",
-      "Bash(yarn prisma:push:*)"
+      "Bash(yarn prisma:push:*)",
+      "Bash(node:*)",
+      "Bash(for module in coin-transaction stock-transaction etc-transaction liabilities-transaction)",
+      "Bash(do)",
+      "Bash(if [ -d \"src/$module/dto\" ])",
+      "Bash(then)",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(for module in bank-summary coin-summary stock-summary etc-summary liabilities-summary)",
+      "Bash(for module in coin-price-history stock-price-history exchange user)"
     ],
     "deny": []
   }
