@@ -92,6 +92,7 @@ export class CoinSummaryService {
         id: updateCoinSummaryInput.id,
         amount: updateCoinSummaryInput.amount,
         quantity: updateCoinSummaryInput.quantity,
+        currency: updateCoinSummaryInput.currency,
         isDelete: updateCoinSummaryInput.isDelete,
       }
     }
@@ -122,7 +123,7 @@ export class CoinSummaryService {
       })
       await prisma.coinSummary.update({
         where: { id: existingCoinSummary.id },
-        data: { isDelete: input.isDelete },
+        data: { isDelete: input.isDelete, quantity: 0, amount: 0 },
       })
     })
     return null

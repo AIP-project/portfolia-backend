@@ -123,7 +123,7 @@ export class StockSummaryService {
       })
       await prisma.stockSummary.update({
         where: { id: existingStockSummary.id },
-        data: { isDelete: input.isDelete },
+        data: { isDelete: input.isDelete, quantity: 0, amount: 0 },
       })
     })
     return null

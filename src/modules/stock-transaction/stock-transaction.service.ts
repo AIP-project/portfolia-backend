@@ -49,7 +49,7 @@ export class StockTransactionService {
         accountId: stockTransactionInput.accountId,
         type: SummaryType.SUMMARY,
         symbol: stockTransactionInput.symbol,
-        isDelete: false,
+        currency: stockTransactionInput.currency,
       },
     })
 
@@ -117,6 +117,7 @@ export class StockTransactionService {
         amount: {
           increment: sign * Number(restCleanInput.amount),
         },
+        isDelete: false,
       },
     }
 
