@@ -35,4 +35,9 @@ export const ErrorMessage = {
   MSG_NOT_COIN_ACCOUNT: "코인 계좌가 아닙니다.",
   MSG_NOT_ETC_ACCOUNT: "기타 계좌가 아닙니다.",
   MSG_NOT_LIABILITIES_ACCOUNT: "부채 계좌가 아닙니다.",
+
+  MSG_INSUFFICIENT_BALANCE: "잔액이 부족합니다.",
+  MSG_SAME_ACCOUNT_TRANSFER: "같은 계좌로는 이체할 수 없습니다.",
+  MSG_NOT_CASH_TYPE_SUMMARY: "현금 타입의 요약정보를 찾을 수 없습니다.",
+  MSG_CURRENCY_MISMATCH: "서로 다른 통화 간에는 이체할 수 없습니다.",
 }

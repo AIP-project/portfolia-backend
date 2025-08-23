@@ -10,7 +10,7 @@ import { UserRole } from "@prisma/client"
 @Injectable()
 export abstract class BaseTransactionService<TInput, TOutput> {
   protected abstract readonly logger: Logger
-  
+
   protected constructor(protected readonly prisma: PrismaService) {}
 
   /**
@@ -19,10 +19,10 @@ export abstract class BaseTransactionService<TInput, TOutput> {
   async create(jwtPayload: JwtPayload, input: TInput): Promise<TOutput> {
     // Step 1: Clean and validate input
     const cleanedInput = await this.cleanInput(jwtPayload, input)
-    
+
     // Step 2: Execute transaction
     const result = await this.txProcess(cleanedInput)
-    
+
     // Step 3: Post-transaction operations
     return await this.postProcess(result)
   }
@@ -33,10 +33,10 @@ export abstract class BaseTransactionService<TInput, TOutput> {
   async update(jwtPayload: JwtPayload, input: TInput): Promise<TOutput> {
     // Step 1: Clean and validate input
     const cleanedInput = await this.cleanUpdateInput(jwtPayload, input)
-    
+
     // Step 2: Execute transaction
     const result = await this.txUpdate(cleanedInput)
-    
+
     // Step 3: Post-transaction operations
     return await this.postProcess(result)
   }
@@ -47,10 +47,10 @@ export abstract class BaseTransactionService<TInput, TOutput> {
   async delete(jwtPayload: JwtPayload, id: number): Promise<TOutput> {
     // Step 1: Validate permissions
     await this.validateDeletePermission(jwtPayload, id)
-    
+
     // Step 2: Execute soft delete
     const result = await this.txSoftDelete(id)
-    
+
     // Step 3: Post-deletion operations
     return await this.postDelete(result)
   }
@@ -74,7 +74,7 @@ export abstract class BaseTransactionService<TInput, TOutput> {
     if (jwtPayload.role === UserRole.ADMIN) {
       return
     }
-    
+
     // Override in child class for specific validation
     throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
   }

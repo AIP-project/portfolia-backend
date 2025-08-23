@@ -1,12 +1,5 @@
 import { registerEnumType } from "@nestjs/graphql"
-import {
-  UserRole,
-  UserState,
-  AccountType,
-  CurrencyType,
-  TransactionType,
-  SummaryType,
-} from "@prisma/client"
+import { UserRole, UserState, AccountType, CurrencyType, TransactionType, SummaryType } from "@prisma/client"
 
 /**
  * Register all Prisma enums for GraphQL

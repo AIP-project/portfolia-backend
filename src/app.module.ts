@@ -30,6 +30,7 @@ import { RedisModule, RedisModuleOptions } from "@nestjs-modules/ioredis"
 import { GqlConfigService } from "./common/config/gql-config.service"
 import { PrismaModule } from "./common/prisma"
 import { DashboardModule } from "./modules/dashboard/dashboard.module"
+import { TransferModule } from "./modules/transfer/transfer.module"
 import { registerAllEnums } from "./common/graphql/enums"
 
 // Register all GraphQL enums at startup
@@ -87,6 +88,7 @@ registerAllEnums()
     ExchangeModule,
     DistributeLockModule,
     DashboardModule,
+    TransferModule,
   ],
   controllers: [AppController],
   providers: [

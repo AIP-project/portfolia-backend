@@ -155,15 +155,15 @@ export class UserService {
   async updateUser(jwtPayload: JwtPayload, updateUserInput: UpdateUserInput) {
     const cleanInput = await this.cleanUpdateUser(jwtPayload, updateUserInput)
     const user = await this.txUpdateUser(cleanInput)
-    
+
     // Generate new token with updated user information
     const updatedJwtPayload: JwtPayload = {
       id: user.id,
       role: user.role,
       email: user.email,
-      currency: user.currency
+      currency: user.currency,
     }
-    
+
     return await this.jwtService.generateTokens(updatedJwtPayload)
   }
 

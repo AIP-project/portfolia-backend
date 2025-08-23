@@ -31,17 +31,20 @@ export class AccountService {
   async createAccount(jwtPayload: JwtPayload, createAccountInput: CreateAccountInput) {
     // Step 1: Clean and validate input
     const cleanInput = await this.cleanCreateAccount(jwtPayload, createAccountInput)
-    
+
     // Step 2: Execute transaction
     const account = await this.txCreateAccount(cleanInput)
-    
+
     // Step 3: Post-transaction operations
     return await this.postCreateAccount(account)
   }
 
-  private async cleanCreateAccount(jwtPayload: JwtPayload, createAccountInput: CreateAccountInput): Promise<CleanedCreateAccountInput> {
+  private async cleanCreateAccount(
+    jwtPayload: JwtPayload,
+    createAccountInput: CreateAccountInput,
+  ): Promise<CleanedCreateAccountInput> {
     const cleanInput = await this.commonCheckAccount(jwtPayload, createAccountInput)
-    
+
     let summaryName = ""
     if (createAccountInput.type === AccountType.BANK) {
       if (!createAccountInput.bankSummary?.name) {
@@ -59,11 +62,11 @@ export class AccountService {
       }
       summaryName = createAccountInput.coinSummary.name
     }
-    
+
     return {
       ...createAccountInput,
       ...cleanInput,
-      nickName: createAccountInput.nickName || summaryName
+      nickName: createAccountInput.nickName || summaryName,
     } as CleanedCreateAccountInput
   }
 
@@ -186,29 +189,32 @@ export class AccountService {
   async updateAccount(jwtPayload: JwtPayload, updateAccountInput: UpdateAccountInput) {
     // Step 1: Clean and validate input
     const cleanInput = await this.cleanUpdateAccount(jwtPayload, updateAccountInput)
-    
+
     // Step 2: Execute transaction
-    const account = cleanInput.isDelete 
+    const account = cleanInput.isDelete
       ? await this.txDeleteAccount(cleanInput)
       : await this.txUpdateAccount(cleanInput)
-    
+
     // Step 3: Post-transaction operations
     return await this.postUpdateAccount(account)
   }
 
-  private async cleanUpdateAccount(jwtPayload: JwtPayload, updateAccountInput: UpdateAccountInput): Promise<CleanedUpdateAccountInput> {
+  private async cleanUpdateAccount(
+    jwtPayload: JwtPayload,
+    updateAccountInput: UpdateAccountInput,
+  ): Promise<CleanedUpdateAccountInput> {
     const cleanInput = await this.commonCheckAccount(jwtPayload, updateAccountInput)
     const existingAccount = await this.prisma.account.findFirst({
       where: { id: cleanInput.id, isDelete: false },
     })
-    
+
     if (!existingAccount) {
       throw new ForbiddenException(ErrorMessage.MSG_NOT_FOUND_ACCOUNT)
     }
     if (existingAccount.userId !== cleanInput.userId) {
       throw new ForbiddenException(ErrorMessage.MSG_FORBIDDEN_ERROR)
     }
-    
+
     return { ...updateAccountInput, ...cleanInput } as CleanedUpdateAccountInput
   }
 
@@ -354,7 +360,7 @@ export class AccountService {
   private async postCreateAccount(account: Account) {
     // Log account creation
     this.logger.log(`Account created: ${account.id} for user: ${account.userId}`)
-    
+
     // Return the account as-is (can add caching, notifications, etc. later)
     return account
   }
@@ -369,7 +375,7 @@ export class AccountService {
     } else {
       this.logger.log(`Account updated: ${account.id}`)
     }
-    
+
     // Return the account as-is (can add cache invalidation, etc. later)
     return account
   }

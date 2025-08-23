@@ -27,7 +27,13 @@
       "Bash(fi)",
       "Bash(done)",
       "Bash(for module in bank-summary coin-summary stock-summary etc-summary liabilities-summary)",
-      "Bash(for module in coin-price-history stock-price-history exchange user)"
+      "Bash(for module in coin-price-history stock-price-history exchange user)",
+      "Bash(yarn lint)",
+      "Bash(yarn format:check)",
+      "Bash(yarn format)",
+      "Read(//Users/shinsanghoon/.claude/**)",
+      "Bash(chmod:*)",
+      "Bash(cat:*)"
     ],
     "deny": []
   }

@@ -21,7 +21,7 @@ export class CurrencyUtils {
     if (!sourceCurrency) {
       return 0
     }
-    
+
     if (targetCurrency === sourceCurrency) {
       return amount
     }
