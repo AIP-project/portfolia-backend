@@ -49,7 +49,6 @@ export class StockTransactionService {
         accountId: stockTransactionInput.accountId,
         type: SummaryType.SUMMARY,
         symbol: stockTransactionInput.symbol,
-        currency: stockTransactionInput.currency,
       },
     })
 
