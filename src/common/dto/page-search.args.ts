@@ -14,7 +14,7 @@ export class PageSearchArgs {
 
   @Field(() => Int, { nullable: true, defaultValue: 10 })
   @Min(1)
-  @Max(50)
+  @Max(100)
   take?: number
 
   get skip(): number {
