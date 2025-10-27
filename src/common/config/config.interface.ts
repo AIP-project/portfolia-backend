@@ -47,4 +47,6 @@ export interface InterfaceConfig {
 export interface RedisConfig {
   host: string | undefined
   port: number
+  password?: string
+  tls?: boolean
 }

@@ -51,9 +51,6 @@ COPY ./dist ./dist
 COPY deploy/start.sh ./
 RUN chmod +x start.sh
 
-# 환경변수 파일 복사
-COPY .env.${NODE_ENV} .env
-
 # PM2 설정 파일 복사
 COPY deploy/ecosystem.config.js .
 

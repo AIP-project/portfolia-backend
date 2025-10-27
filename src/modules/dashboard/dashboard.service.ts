@@ -60,11 +60,11 @@ export class DashboardService {
       coinPriceHistories = await this.prisma.$queryRaw`
           SELECT cph1.symbol, cph1.price, cph1.currency
           FROM coin_price_history cph1
-                   INNER JOIN (SELECT symbol, MAX(createdAt) as max_created_at
+                   INNER JOIN (SELECT symbol, MAX("createdAt") as max_created_at
                                FROM coin_price_history
                                WHERE symbol IN (${Prisma.join(coinSymbols)})
                                GROUP BY symbol) cph2
-                              ON cph1.symbol = cph2.symbol AND cph1.createdAt = cph2.max_created_at
+                              ON cph1.symbol = cph2.symbol AND cph1."createdAt" = cph2.max_created_at
       `
     }
 
@@ -149,11 +149,11 @@ export class DashboardService {
       stockPriceHistories = await this.prisma.$queryRaw`
           SELECT sph1.symbol, sph1.base, sph1.currency
           FROM stock_price_history sph1
-                   INNER JOIN (SELECT symbol, MAX(createdAt) as max_created_at
+                   INNER JOIN (SELECT symbol, MAX("createdAt") as max_created_at
                                FROM stock_price_history
                                WHERE symbol IN (${Prisma.join(stockSymbols)})
                                GROUP BY symbol) sph2
-                              ON sph1.symbol = sph2.symbol AND sph1.createdAt = sph2.max_created_at
+                              ON sph1.symbol = sph2.symbol AND sph1."createdAt" = sph2.max_created_at
       `
     }
 

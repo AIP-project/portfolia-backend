@@ -1,5 +1,5 @@
 # compiled output
-/dist
+# /dist - commented out to include built files for Fly.io deployment
 /node_modules
 /build
 
@@ -33,7 +33,6 @@ lerna-debug.log*
 *.launch
 .settings/
 *.sublime-workspace
-.claude/settings.local.json
 
 # IDE - VSCode
 .vscode/*
