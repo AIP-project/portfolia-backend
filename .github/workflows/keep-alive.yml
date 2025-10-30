@@ -1,0 +1,30 @@
+name: Keep Backend Alive
+
+on:
+  schedule:
+    # 5분마다 실행 (GitHub Actions의 최소 간격)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # 수동 실행 가능
+
+jobs:
+  ping:
+    name: Health Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          echo "🏥 Checking backend health..."
+          response=$(curl -s -w "\n%{http_code}" https://portfolia-backend.fly.dev/health)
+          status_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+
+          echo "Status: $status_code"
+          echo "Response: $body"
+
+          if [ "$status_code" -eq 200 ]; then
+            echo "✅ Backend is healthy!"
+          else
+            echo "⚠️  Backend returned status: $status_code"
+            exit 1
+          fi
