@@ -62,7 +62,6 @@ Each domain follows a consistent pattern:
 - `{domain}.module.ts` - Module definition
 - `{domain}.resolver.ts` - GraphQL resolvers
 - `{domain}.service.ts` - Business logic
-- `entities/` - TypeORM entities
 - `dto/` - Data transfer objects and GraphQL inputs/models
 
 Key modules:
@@ -79,31 +78,6 @@ Key modules:
 - Redis for distributed locking (`DistributeLockModule`)
 - DataLoader pattern implemented for efficient GraphQL queries
 - Price history updated via scheduled tasks
-
-## Prisma Migration Status
-
-**IMPORTANT**: TypeORM to Prisma migration is partially complete:
-
-### Completed:
-- ✅ Prisma schema created with all models
-- ✅ Prisma client setup and configuration
-- ✅ User service migrated to Prisma
-- ✅ App module updated to use Prisma
-
-### Remaining Tasks:
-- 🔄 Update all remaining service files (account, bank-transaction, coin-transaction, etc.)
-- 🔄 Remove TypeORM entity files and imports
-- 🔄 Update all module files to remove TypeORM dependencies  
-- 🔄 Update resolver files if needed
-- 🔄 Update test files for Prisma mocking
-- 🔄 Remove TypeORM logger and related utilities
-
-### To continue migration:
-1. Run `yarn prisma:generate` to generate client
-2. Update each service file to use `PrismaService` instead of repositories
-3. Remove `@InjectRepository` and TypeORM imports
-4. Update module imports to remove `TypeOrmModule.forFeature()`
-5. Test each module after migration
 
 ## Authentication & Authorization
 
